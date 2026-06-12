@@ -63,3 +63,34 @@ def test_save_last_produces_clip_of_expected_length(tmp_path: Path):
     assert clip.exists()
     assert {"video", "audio"} <= ffprobe_codecs(clip)
     assert ffprobe_duration(clip) == _pytest.approx(4.0, abs=1.2)
+
+
+from tea_clipper.manual_recorder import ManualRecorder
+
+
+@requires_engine
+@pytest.mark.engine
+def test_manual_record_captures_full_take(tmp_path: Path):
+    import pytest as _pytest
+    from conftest import ffprobe_duration
+
+    buffer_dir = tmp_path / "buffer"
+    spec = EncoderRegistry().resolve("h264", hardware=False, bitrate_kbps=4000, fps=30, segment_seconds=1)
+    pipe = CapturePipeline(
+        source_desc=test_source_bin(), encoder=spec, buffer_dir=buffer_dir,
+        segment_seconds=1, max_segments=20,
+    )
+    rec = ManualRecorder(pipeline=pipe)
+    pipe.add_segment_listener(rec.on_segment_finalized)
+
+    pipe.start()
+    time.sleep(1)
+    rec.start()
+    time.sleep(5)            # record ~5s
+    out = tmp_path / "manual.mkv"
+    clip = rec.stop(out)
+    pipe.stop()
+
+    assert clip.exists()
+    assert {"video", "audio"} <= ffprobe_codecs(clip)
+    assert ffprobe_duration(clip) == _pytest.approx(5.0, abs=1.5)
