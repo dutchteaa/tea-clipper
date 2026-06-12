@@ -37,6 +37,8 @@ buffer/
 *.mkv
 *.mp4
 *.ts
+# ffmpeg concat-list temp files written next to stitched clips
+.concat-*.txt
 
 # Local config / runtime state (user-specific)
 config.local.toml

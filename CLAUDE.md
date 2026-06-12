@@ -82,7 +82,55 @@ GPU isn't taxed twice.
 - Surface failures to the UI (portal denial, encoder init failure, disk full) rather than
   crashing; fall back where sensible (software encode, video-only if mic missing).
 
-## Status
+## Development
 
-Design is settled; implementation is just starting. There is no build/run command yet —
-add one here (and to the README) once an entry point exists.
+- **Branch:** engine-core work lives on the `engine-core` branch (not yet merged to default).
+- **Venv:** created with `python -m venv --system-site-packages .venv` so it can see the
+  **system** PyGObject + GStreamer 1.28 (PyGObject is painful to pip-build into a clean venv).
+  pytest + tomli-w are pip-installed into the venv.
+- **Run tests:** `.venv/bin/pytest` (unit only) or `.venv/bin/pytest -m "engine or not engine"`
+  to include the real-pipeline integration tests. Engine tests are marked `@pytest.mark.engine`
+  and auto-skip via the `requires_engine` marker when GStreamer/ffmpeg are absent.
+- **System dependency discovered:** the rolling-buffer design needs `splitmuxsink` +
+  `matroskamux`, which ship in **`gst-plugins-good`** (Arch: `sudo pacman -S gst-plugins-good`).
+  This was missing initially and blocked Task 5 until installed. It is a hard runtime dep.
+- **GStreamer specifics that bit us (keep in mind):** use `muxer-factory=matroskamux` on
+  `splitmuxsink` (the `muxer=` property wants an element instance, not a name). `test_source_bin()`
+  returns a `(video, audio)` tuple of launch fragments.
+
+## Status — engine core (plan: docs/superpowers/plans/2026-06-12-engine-core.md)
+
+Executing the engine-core plan task-by-task (TDD). **Done & committed on `engine-core`:**
+
+- ✅ Task 1 — skeleton (`pyproject.toml`, `gst_init.ensure_gst`, `conftest` test harness)
+- ✅ Task 2 — `settings.Settings` (dataclass + TOML)
+- ✅ Task 3 — `encoders.EncoderRegistry` (probe + map codec→element; hw→sw fallback warns)
+- ✅ Task 4 — `replay_buffer.ReplayBuffer` (segment selection + lossless ffmpeg `-c copy` stitch;
+  uses a unique temp concat-list file and surfaces ffmpeg stderr on failure)
+- ✅ Task 5 — `pipeline.CapturePipeline` (real GStreamer pipeline: test sources → x264enc →
+  rolling auto-pruned `splitmuxsink` segments + `format-location-full` finalize pub/sub +
+  `force_split()`; integration test proves it headlessly)
+
+### NEXT SESSION — resume here (Tasks 6 & 7)
+
+Both tasks have full code/tests in the plan file; follow them as written, but apply the same
+real-pipeline adjustments already made in Task 5 (they should now just work since Task 5's
+pipeline is correct).
+
+- ⬜ **Task 6 — `ReplayBuffer.save_last`**: add `save_last(seconds, output_path, pipeline)` that
+  calls `pipeline.force_split()` then `stitch(self.segments_for(seconds), output_path)`. Add the
+  end-to-end engine test (`tests/test_pipeline_integration.py`): record ~6s, `save_last(4, ...)`,
+  assert the clip exists, has video+audio, and ffprobe duration ≈ 4s. **Note:** `force_split`'s
+  `_split_event` handshake is implemented in `pipeline.py` and ready to use — Task 6 is its first
+  real exercise; verify it doesn't deadlock (it waits up to 3s).
+- ⬜ **Task 7 — `manual_recorder.ManualRecorder`**: collects finalized segments while active,
+  `start()` (force_split to begin on a clean boundary) / `stop(out)` (force_split + stitch the
+  collected segments). Integration test: record ~5s, assert full-take clip. The plan intentionally
+  duplicates the stitch logic here — fine for now (YAGNI); extract a shared helper only if a third
+  consumer appears.
+
+After Tasks 6 & 7: run `.venv/bin/pytest -m "engine or not engine"` (all green), then consider a
+final review pass and `superpowers:finishing-a-development-branch`. **Deferred to later plans**
+(not engine-core): `PortalManager` (real `pipewiresrc` capture via xdg-desktop-portal + restore
+token, replacing `test_source_bin()`), real desktop+mic audio mixing (`audiomixer` of two
+`pipewiresrc`), `HotkeyService` (GlobalShortcuts portal), `Controller`, and the PySide6 UI.
