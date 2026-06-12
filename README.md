@@ -35,16 +35,47 @@ the standard desktop portal, so it works without root or kernel hacks.
 
 - Python 3.12+
 - PipeWire + `xdg-desktop-portal` (with a backend, e.g. `xdg-desktop-portal-kde`)
-- GStreamer 1.22+ with the `pipewire`, `va`, and base/good/bad plugin sets
-- PyGObject (GStreamer/GLib bindings) and PySide6 (Qt UI)
+- GStreamer 1.22+ (developed on 1.28) and PyGObject, with these plugin sets:
+  - **`gst-plugins-good`** — ships `splitmuxsink` + `matroskamux`, the rolling-buffer core
+    (**hard requirement**; the buffer cannot run without it)
+  - **`gst-plugins-base`** — `opusenc`, `videoconvert`, audio elements
+  - **`gst-plugin-pipewire`** — `pipewiresrc` (portal screen capture)
+  - **`gst-plugin-va`** — VAAPI hardware encoders (`vah264enc` / `vah265enc` / `vaav1enc`)
+  - **`gst-plugins-ugly`** — `x264enc` (software encode fallback)
+- PySide6 (Qt UI — used by the forthcoming settings UI; not needed for the engine)
 - ffmpeg (used to losslessly stitch saved clips)
 
-> A full dependency list and install instructions will land here as the app takes shape.
+On Arch/CachyOS, the plugin sets above map to:
+`sudo pacman -S gst-plugins-good gst-plugins-base gst-plugin-pipewire gst-plugin-va gst-plugins-ugly ffmpeg`
 
 ## Status
 
-🚧 **Early development.** The architecture and design are settled; implementation is
-starting now. Expect things to change quickly.
+🚧 **Early development — engine core in progress** (on the `engine-core` branch).
+
+The headless capture engine is built and tested against a real GStreamer pipeline:
+
+- ✅ Settings (TOML), encoder probing/selection (VAAPI with software fallback)
+- ✅ Rolling, self-pruning segment buffer + per-segment finalize events
+- ✅ Lossless clip stitching (`ffmpeg -c copy`)
+- 🔜 Save-last-N-seconds and manual full-take recording (wiring in progress)
+- 🔜 Portal screen capture, global hotkeys, and the PySide6 UI (later milestones)
+
+The engine is proven **headlessly** using GStreamer test sources, so the whole
+capture → buffer → stitch path is exercised without a real screencast.
+
+## Development
+
+```bash
+# venv must see the system PyGObject + GStreamer (don't pip-build PyGObject):
+python -m venv --system-site-packages .venv
+.venv/bin/pip install -e ".[dev]"
+
+.venv/bin/pytest                          # unit tests only
+.venv/bin/pytest -m "engine or not engine"  # + real-pipeline integration tests
+```
+
+Engine integration tests are marked `@pytest.mark.engine` and auto-skip when
+GStreamer/ffmpeg are unavailable.
 
 ## How it works (in one breath)
 
