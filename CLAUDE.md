@@ -100,7 +100,8 @@ GPU isn't taxed twice.
 
 ## Status — engine core (plan: docs/superpowers/plans/2026-06-12-engine-core.md)
 
-Executing the engine-core plan task-by-task (TDD). **Done & committed on `engine-core`:**
+Engine-core is **complete** (Tasks 1–7) on `engine-core` (open PR #1 → `main`). TDD throughout;
+`.venv/bin/pytest -m "engine or not engine"` is green. **Done & committed on `engine-core`:**
 
 - ✅ Task 1 — skeleton (`pyproject.toml`, `gst_init.ensure_gst`, `conftest` test harness)
 - ✅ Task 2 — `settings.Settings` (dataclass + TOML)
@@ -111,26 +112,32 @@ Executing the engine-core plan task-by-task (TDD). **Done & committed on `engine
   rolling auto-pruned `splitmuxsink` segments + `format-location-full` finalize pub/sub +
   `force_split()`; integration test proves it headlessly)
 
-### NEXT SESSION — resume here (Tasks 6 & 7)
-
-Both tasks have full code/tests in the plan file; follow them as written, but apply the same
-real-pipeline adjustments already made in Task 5 (they should now just work since Task 5's
-pipeline is correct).
-
-- ⬜ **Task 6 — `ReplayBuffer.save_last`**: add `save_last(seconds, output_path, pipeline)` that
-  calls `pipeline.force_split()` then `stitch(self.segments_for(seconds), output_path)`. Add the
-  end-to-end engine test (`tests/test_pipeline_integration.py`): record ~6s, `save_last(4, ...)`,
-  assert the clip exists, has video+audio, and ffprobe duration ≈ 4s. **Note:** `force_split`'s
-  `_split_event` handshake is implemented in `pipeline.py` and ready to use — Task 6 is its first
-  real exercise; verify it doesn't deadlock (it waits up to 3s).
-- ⬜ **Task 7 — `manual_recorder.ManualRecorder`**: collects finalized segments while active,
-  `start()` (force_split to begin on a clean boundary) / `stop(out)` (force_split + stitch the
-  collected segments). Integration test: record ~5s, assert full-take clip. The plan intentionally
-  duplicates the stitch logic here — fine for now (YAGNI); extract a shared helper only if a third
+- ✅ Task 6 — `ReplayBuffer.save_last(seconds, output_path, pipeline)` (force_split + stitch last
+  *N* seconds; end-to-end engine test proves a ~4s playable A/V clip).
+- ✅ Task 7 — `manual_recorder.ManualRecorder` (collect segments while active; `start()`/`stop(out)`
+  force clean boundaries and stitch the full take; engine test proves a ~5s clip). The stitch logic
+  is intentionally duplicated from `ReplayBuffer` (YAGNI) — extract a shared helper only if a third
   consumer appears.
 
-After Tasks 6 & 7: run `.venv/bin/pytest -m "engine or not engine"` (all green), then consider a
-final review pass and `superpowers:finishing-a-development-branch`. **Deferred to later plans**
-(not engine-core): `PortalManager` (real `pipewiresrc` capture via xdg-desktop-portal + restore
-token, replacing `test_source_bin()`), real desktop+mic audio mixing (`audiomixer` of two
+## Status — PortalManager / real screen capture
+
+Spec: `docs/superpowers/specs/2026-06-12-portalmanager-design.md` · Plan:
+`docs/superpowers/plans/2026-06-12-portalmanager.md`. Implemented (TDD) on the
+`portal-manager` branch (stacked on `engine-core`):
+
+- ✅ `pipeline.CapturePipeline` now accepts a **video-only** source: `source_desc` audio fragment
+  may be `None`, which omits the `opusenc ! replaymux.audio_0` branch.
+- ✅ `portal.PortalManager` — negotiates `org.freedesktop.portal.ScreenCast`
+  (CreateSession → SelectSources(MONITOR, embedded cursor, persist) → Start → OpenPipeWireRemote),
+  reuses/saves `Settings.source_restore_token`, and returns a `pipewiresrc fd=… path=…` video
+  fragment that replaces `test_source_bin()`'s video half. `close()` releases the fd + session.
+- ✅ `portal.ScreenCastPortal` — raw Gio/GDBus wrapper (no new dep). Request/Response handshake on a
+  private `GLib.MainLoop`; unix-fd handoff via `call_with_unix_fd_list_sync`. Not unit-tested
+  (needs a live portal + human at the picker); verified by the probe.
+- ✅ `portal_probe.py` (`python -m tea_clipper.portal_probe`) — real-hardware end-to-end check.
+  **Hardware verification still pending** (interactive picker; run on the KDE/Wayland target).
+- Pure logic (`build_select_sources_options`, `parse_start_results`, `build_video_fragment`) and
+  `PortalManager` orchestration are unit-tested with a fake portal (`tests/test_portal.py`).
+
+**Still deferred to later plans:** real desktop+mic audio mixing (`audiomixer` of two
 `pipewiresrc`), `HotkeyService` (GlobalShortcuts portal), `Controller`, and the PySide6 UI.
