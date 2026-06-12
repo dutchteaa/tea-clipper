@@ -53,3 +53,11 @@ class ReplayBuffer:
         finally:
             list_file.unlink(missing_ok=True)
         return output_path
+
+    def save_last(self, seconds: float, output_path: Path, pipeline) -> Path:
+        """Finalize the in-progress segment, then stitch the last `seconds` into a clip."""
+        pipeline.force_split()           # ensure up-to-now footage is on disk
+        segments = self.segments_for(seconds)
+        if not segments:
+            raise RuntimeError("no buffered segments available to save")
+        return self.stitch(segments, output_path)
