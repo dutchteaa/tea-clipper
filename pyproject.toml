@@ -7,6 +7,9 @@ name = "tea-clipper"
 version = "0.0.1"
 description = "Medal-style instant-replay game clipper for Linux/Wayland"
 requires-python = ">=3.12"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
 dependencies = [
     "PyGObject>=3.46",
     "tomli-w>=1.0",

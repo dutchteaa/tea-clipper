@@ -91,4 +91,4 @@ to extend. Contributions welcome once the core lands.
 
 ## License
 
-TBD.
+[MIT](LICENSE) © dutchteaa
