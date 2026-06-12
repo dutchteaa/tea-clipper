@@ -135,9 +135,34 @@ Spec: `docs/superpowers/specs/2026-06-12-portalmanager-design.md` · Plan:
   private `GLib.MainLoop`; unix-fd handoff via `call_with_unix_fd_list_sync`. Not unit-tested
   (needs a live portal + human at the picker); verified by the probe.
 - ✅ `portal_probe.py` (`python -m tea_clipper.portal_probe`) — real-hardware end-to-end check.
-  **Hardware verification still pending** (interactive picker; run on the KDE/Wayland target).
+  **Hardware-verified** on KDE/Wayland (AMD RDNA3): produced a real 2560×1440 H.264 video-only
+  clip. (Note: a cold-start probe clip runs a bit short due to `pipewiresrc` startup latency;
+  irrelevant in normal use where the rolling buffer is always full.)
 - Pure logic (`build_select_sources_options`, `parse_start_results`, `build_video_fragment`) and
   `PortalManager` orchestration are unit-tested with a fake portal (`tests/test_portal.py`).
 
-**Still deferred to later plans:** real desktop+mic audio mixing (`audiomixer` of two
-`pipewiresrc`), `HotkeyService` (GlobalShortcuts portal), `Controller`, and the PySide6 UI.
+## Status — HotkeyService / global shortcuts
+
+Spec: `docs/superpowers/specs/2026-06-12-hotkeyservice-design.md` · Plan:
+`docs/superpowers/plans/2026-06-12-hotkeyservice.md`. Implemented (TDD) on the
+`hotkey-service` branch (standalone `hotkeys.py`; `ScreenCastPortal` untouched, per the
+chosen approach):
+
+- ✅ `hotkeys.HotkeyService` — binds `save_clip` + `toggle_record` via
+  `org.freedesktop.portal.GlobalShortcuts` (CreateSession → BindShortcuts → subscribe
+  `Activated`), and dispatches each activation to zero-arg listeners registered per action id.
+  Owns a long-lived `GLib.MainLoop` on a daemon thread; `start(run_loop=False)` lets a caller
+  (the future `Controller`) drive its own loop instead.
+- ✅ `hotkeys.GlobalShortcutsPortal` — standalone raw Gio/GDBus wrapper (own copy of the
+  session/await-response machinery; reuses `portal.py`'s exception classes only). Not
+  unit-tested; verified by the probe.
+- ✅ `hotkey_probe.py` (`python -m tea_clipper.hotkey_probe`) — real-hardware check.
+  **Hardware verification pending** (needs key presses; run on the KDE/Wayland target).
+- Pure `build_shortcuts_list()` and `HotkeyService` orchestration are unit-tested with a fake
+  portal (`tests/test_hotkeys.py`).
+- Binding model is portal-native: the app suggests default triggers (`Ctrl+Alt+C` /
+  `Ctrl+Alt+R`); KDE owns the real binding and the user rebinds in System Settings.
+
+**Still deferred to later plans:** `Controller` (wiring `save_clip → ReplayBuffer.save_last`,
+`toggle_record → ManualRecorder.start/stop`, owning the app main loop), real desktop+mic audio
+mixing (`audiomixer` of two `pipewiresrc`), and the PySide6 UI.

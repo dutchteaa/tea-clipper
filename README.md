@@ -50,18 +50,26 @@ On Arch/CachyOS, the plugin sets above map to:
 
 ## Status
 
-🚧 **Early development — engine core in progress** (on the `engine-core` branch).
+🚧 **Early development — engine + capture + hotkeys done; app wiring next.**
 
-The headless capture engine is built and tested against a real GStreamer pipeline:
+Every capture-side piece is built, unit-tested, and verified against real hardware on
+KDE/Wayland (AMD RDNA3):
 
 - ✅ Settings (TOML), encoder probing/selection (VAAPI with software fallback)
 - ✅ Rolling, self-pruning segment buffer + per-segment finalize events
 - ✅ Lossless clip stitching (`ffmpeg -c copy`)
-- 🔜 Save-last-N-seconds and manual full-take recording (wiring in progress)
-- 🔜 Portal screen capture, global hotkeys, and the PySide6 UI (later milestones)
+- ✅ Save-last-N-seconds clips and manual full-take recording
+- ✅ Real screen capture via `xdg-desktop-portal` ScreenCast (`pipewiresrc`, persistent
+  restore token) — hardware-verified producing a real H.264 clip
+- ✅ Global hotkeys via the GlobalShortcuts portal (`save_clip` / `toggle_record`) —
+  hardware-verified firing on KDE
+- 🔜 **Controller** — wire portal + pipeline + buffer + recorder + hotkeys into a runnable
+  daemon (next milestone, the headless MVP)
+- 🔜 Real desktop + microphone audio mixing (capture is currently video-only)
+- 🔜 PySide6 settings/status UI
 
-The engine is proven **headlessly** using GStreamer test sources, so the whole
-capture → buffer → stitch path is exercised without a real screencast.
+The engine is also proven **headlessly** using GStreamer test sources, so the whole
+capture → buffer → stitch path is exercised in CI without a real screencast.
 
 ## Development
 
