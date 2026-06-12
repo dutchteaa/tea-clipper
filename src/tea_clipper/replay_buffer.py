@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
+import os
 import subprocess
+import tempfile
 from collections import deque
 from pathlib import Path
 
@@ -29,19 +31,25 @@ class ReplayBuffer:
         """Losslessly concat `segments` into `output_path` via ffmpeg -c copy."""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        list_file = output_path.with_suffix(".concat.txt")
-        list_file.write_text(
-            "".join(f"file '{p.resolve()}'\n" for p in segments)
+        fd, list_name = tempfile.mkstemp(
+            dir=output_path.parent, prefix=".concat-", suffix=".txt"
         )
+        list_file = Path(list_name)
         try:
-            subprocess.run(
+            with os.fdopen(fd, "w") as fh:
+                fh.write("".join(f"file '{p.resolve()}'\n" for p in segments))
+            result = subprocess.run(
                 [
                     "ffmpeg", "-y", "-v", "error",
                     "-f", "concat", "-safe", "0", "-i", str(list_file),
                     "-c", "copy", str(output_path),
                 ],
-                check=True,
+                capture_output=True, text=True,
             )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"ffmpeg concat failed (exit {result.returncode}): {result.stderr.strip()}"
+                )
         finally:
             list_file.unlink(missing_ok=True)
         return output_path
