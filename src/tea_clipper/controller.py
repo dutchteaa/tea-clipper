@@ -9,7 +9,7 @@ from pathlib import Path
 
 from gi.repository import GLib
 
-from tea_clipper.hotkeys import SAVE_CLIP, TOGGLE_RECORD
+from tea_clipper.hotkeys import SAVE_CLIP, TOGGLE_RECORD, HotkeyService
 
 log = logging.getLogger("tea_clipper")
 
@@ -81,3 +81,30 @@ class Controller:
         self._pipeline.stop()
         if self._portal is not None:
             self._portal.close()
+
+
+def build_controller(settings, portal=None) -> Controller:
+    """Wire the real components: portal capture → pipeline → buffer + recorder → hotkeys."""
+    from tea_clipper.encoders import EncoderRegistry
+    from tea_clipper.manual_recorder import ManualRecorder
+    from tea_clipper.pipeline import CapturePipeline
+    from tea_clipper.portal import PortalManager
+    from tea_clipper.replay_buffer import ReplayBuffer
+
+    if portal is None:
+        portal = PortalManager(settings)
+    video = portal.open()
+    spec = EncoderRegistry().resolve(
+        settings.codec, hardware=settings.hardware, bitrate_kbps=settings.bitrate_kbps,
+        fps=settings.fps, segment_seconds=settings.segment_seconds,
+    )
+    pipeline = CapturePipeline(
+        source_desc=(video, None), encoder=spec, buffer_dir=settings.buffer_dir,
+        segment_seconds=settings.segment_seconds, max_segments=compute_max_segments(settings),
+    )
+    replay = ReplayBuffer(segment_seconds=settings.segment_seconds)
+    recorder = ManualRecorder(pipeline=pipeline)
+    pipeline.add_segment_listener(replay.on_segment_finalized)
+    pipeline.add_segment_listener(recorder.on_segment_finalized)
+    hotkeys = HotkeyService()
+    return Controller(settings, pipeline, replay, recorder, hotkeys, portal=portal)
