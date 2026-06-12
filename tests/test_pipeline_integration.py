@@ -94,3 +94,24 @@ def test_manual_record_captures_full_take(tmp_path: Path):
     assert clip.exists()
     assert {"video", "audio"} <= ffprobe_codecs(clip)
     assert ffprobe_duration(clip) == _pytest.approx(5.0, abs=1.5)
+
+
+@requires_engine
+@pytest.mark.engine
+def test_video_only_pipeline_has_no_audio_track(tmp_path: Path):
+    buffer_dir = tmp_path / "buffer"
+    spec = EncoderRegistry().resolve("h264", hardware=False, bitrate_kbps=4000, fps=30, segment_seconds=1)
+    video, _audio = test_source_bin()
+    finalized: list[Path] = []
+    pipe = CapturePipeline(
+        source_desc=(video, None), encoder=spec, buffer_dir=buffer_dir,
+        segment_seconds=1, max_segments=10,
+    )
+    pipe.add_segment_listener(finalized.append)
+    pipe.start()
+    time.sleep(4)
+    pipe.stop()
+    assert finalized
+    codecs = ffprobe_codecs(finalized[0])
+    assert "video" in codecs
+    assert "audio" not in codecs

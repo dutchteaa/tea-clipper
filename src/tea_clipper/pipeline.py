@@ -36,7 +36,7 @@ class CapturePipeline:
 
     def __init__(
         self,
-        source_desc: tuple[str, str],
+        source_desc: tuple[str, str | None],
         encoder: EncoderSpec,
         buffer_dir: Path,
         segment_seconds: int,
@@ -61,9 +61,12 @@ class CapturePipeline:
         launch = (
             f"{video_src} ! {enc} {props} ! {encoder.parser} ! "
             f"splitmuxsink name=replaymux muxer-factory=matroskamux "
-            f"max-size-time={seg_ns} max-files={max_segments} send-keyframe-requests=true "
-            f"{audio_src} ! opusenc ! replaymux.audio_0"
+            f"max-size-time={seg_ns} max-files={max_segments} send-keyframe-requests=true"
         )
+        # Audio is optional: a None audio fragment yields a video-only pipeline
+        # (real portal capture is video-only; the test source still supplies audio).
+        if audio_src is not None:
+            launch += f" {audio_src} ! opusenc ! replaymux.audio_0"
         self.pipeline = Gst.parse_launch(launch)
         self.splitmux = self.pipeline.get_by_name("replaymux")
         # format-location-full lets us name files AND learn when the previous one closed.
