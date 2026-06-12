@@ -1,3 +1,6 @@
+import pytest
+from unittest.mock import patch
+
 from tea_clipper.encoders import EncoderRegistry, EncoderSpec
 
 
@@ -14,13 +17,19 @@ def test_resolve_software_h264_always_available():
 
 def test_resolve_unknown_codec_raises():
     reg = EncoderRegistry()
-    try:
+    with pytest.raises(ValueError, match="unknown codec"):
         reg.resolve(codec="rle", hardware=False, bitrate_kbps=8000, fps=60, segment_seconds=2)
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
 
 def test_available_codecs_is_subset_of_known():
     reg = EncoderRegistry()
     assert set(reg.available_codecs()) <= {"h264", "hevc", "av1"}
+
+
+def test_resolve_warns_and_falls_back_when_hardware_missing():
+    reg = EncoderRegistry()
+    # Pretend only the software encoder exists.
+    with patch("tea_clipper.encoders._element_exists", side_effect=lambda name: name == "x264enc"):
+        with pytest.warns(UserWarning, match="falling back to software"):
+            spec = reg.resolve(codec="h264", hardware=True, bitrate_kbps=8000, fps=60, segment_seconds=2)
+    assert spec.element == "x264enc"

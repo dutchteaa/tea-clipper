@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 
-from gi.repository import Gst
+from tea_clipper.gst_init import ensure_gst  # registers gi version first
 
-from tea_clipper.gst_init import ensure_gst
+from gi.repository import Gst
 
 # codec -> (hardware element, software element, parser)
 _CODEC_TABLE = {
@@ -19,7 +20,7 @@ _CODEC_TABLE = {
 @dataclass
 class EncoderSpec:
     element: str
-    properties: dict = field(default_factory=dict)
+    properties: dict[str, int] = field(default_factory=dict)
     parser: str = ""
 
 
@@ -44,7 +45,15 @@ class EncoderRegistry:
         if codec not in _CODEC_TABLE:
             raise ValueError(f"unknown codec: {codec}")
         hw, sw, parser = _CODEC_TABLE[codec]
-        element = hw if (hardware and _element_exists(hw)) else sw
+        if hardware and _element_exists(hw):
+            element = hw
+        else:
+            element = sw
+            if hardware:
+                warnings.warn(
+                    f"hardware encoder {hw!r} unavailable; falling back to software {sw!r}",
+                    stacklevel=2,
+                )
         if not _element_exists(element):
             raise ValueError(f"no encoder available for codec {codec} (tried {hw}, {sw})")
         key_int_max = fps * segment_seconds
