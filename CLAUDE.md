@@ -157,12 +157,31 @@ chosen approach):
   session/await-response machinery; reuses `portal.py`'s exception classes only). Not
   unit-tested; verified by the probe.
 - ✅ `hotkey_probe.py` (`python -m tea_clipper.hotkey_probe`) — real-hardware check.
-  **Hardware verification pending** (needs key presses; run on the KDE/Wayland target).
+  **Hardware-verified** on KDE/Wayland: both `save_clip` and `toggle_record` registered and
+  fired on key press.
 - Pure `build_shortcuts_list()` and `HotkeyService` orchestration are unit-tested with a fake
   portal (`tests/test_hotkeys.py`).
 - Binding model is portal-native: the app suggests default triggers (`Ctrl+Alt+C` /
   `Ctrl+Alt+R`); KDE owns the real binding and the user rebinds in System Settings.
 
-**Still deferred to later plans:** `Controller` (wiring `save_clip → ReplayBuffer.save_last`,
-`toggle_record → ManualRecorder.start/stop`, owning the app main loop), real desktop+mic audio
-mixing (`audiomixer` of two `pipewiresrc`), and the PySide6 UI.
+## Status — Controller / runnable MVP
+
+Spec: `docs/superpowers/specs/2026-06-12-controller-design.md` · Plan:
+`docs/superpowers/plans/2026-06-12-controller.md`. Implemented (TDD) on the `controller` branch:
+
+- ✅ `controller.Controller` — owns the app `GLib.MainLoop` and routes hotkeys:
+  `save_clip → ReplayBuffer.save_last(clip_length_seconds, …)` and `toggle_record →
+  ManualRecorder.start()/stop()`, writing timestamped clips to `settings.output_dir`. Per-action
+  failures are caught/logged so one bad clip never kills the daemon. The hotkey service runs with
+  `run_loop=False` to share the Controller's loop.
+- ✅ `controller.build_controller(settings)` — wires the real stack: `PortalManager.open()` →
+  `EncoderRegistry.resolve` → video-only `CapturePipeline` → `ReplayBuffer` + `ManualRecorder` as
+  segment listeners → `HotkeyService`.
+- ✅ `__main__.py` — **the MVP is now runnable headless: `python -m tea_clipper`** (opens capture,
+  keeps the buffer full, hotkeys save/record; persists the restore token; Ctrl-C exits cleanly).
+  **Hardware verification pending** (interactive; run on the KDE/Wayland target).
+- `compute_max_segments` + `Controller` handlers/lifecycle are unit-tested with fakes
+  (`tests/test_controller.py`); `build_controller`/entrypoint are probe-verified.
+
+**Last deferred milestones:** real desktop+mic audio mixing (`audiomixer` of two `pipewiresrc`;
+capture is currently video-only) and the PySide6 settings/status UI.
