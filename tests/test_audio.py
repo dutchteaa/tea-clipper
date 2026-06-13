@@ -1,4 +1,8 @@
-from tea_clipper.audio import build_audio_fragment
+from tea_clipper.audio import (
+    AudioDevice,
+    build_audio_fragment,
+    resolve_audio_devices,
+)
 
 
 def test_empty_list_returns_none():
@@ -25,3 +29,52 @@ def test_multiple_devices_each_link_into_the_mixer():
     assert "audiomixer name=amix" in frag
     assert frag.rstrip().endswith("queue name=aenc_in")
     assert "audioconvert" in frag
+
+
+class _S:
+    """Minimal stand-in for Settings carrying only audio_devices."""
+
+    def __init__(self, audio_devices):
+        self.audio_devices = audio_devices
+
+
+def _available():
+    return [
+        AudioDevice("sink.a.monitor", "Speakers Monitor", is_monitor=True, is_default=True),
+        AudioDevice("sink.b.monitor", "HDMI Monitor", is_monitor=True, is_default=False),
+        AudioDevice("mic.a", "Default Mic", is_monitor=False, is_default=True),
+        AudioDevice("mic.b", "USB Mic", is_monitor=False, is_default=False),
+    ]
+
+
+def test_tokens_expand_to_defaults():
+    out = resolve_audio_devices(_S(["@desktop@", "@mic@"]), _available())
+    assert out == ["sink.a.monitor", "mic.a"]
+
+
+def test_literal_names_pass_through():
+    out = resolve_audio_devices(_S(["mic.b", "sink.b.monitor"]), _available())
+    assert out == ["mic.b", "sink.b.monitor"]
+
+
+def test_unavailable_entries_are_skipped():
+    out = resolve_audio_devices(_S(["mic.a", "ghost.device"]), _available())
+    assert out == ["mic.a"]
+
+
+def test_order_preserved_and_deduped():
+    out = resolve_audio_devices(_S(["@mic@", "mic.a", "@desktop@"]), _available())
+    assert out == ["mic.a", "sink.a.monitor"]
+
+
+def test_empty_selection_yields_empty():
+    assert resolve_audio_devices(_S([]), _available()) == []
+
+
+def test_missing_default_token_is_skipped():
+    no_default_mic = [
+        AudioDevice("sink.a.monitor", "Speakers Monitor", is_monitor=True, is_default=True),
+        AudioDevice("mic.b", "USB Mic", is_monitor=False, is_default=False),
+    ]
+    out = resolve_audio_devices(_S(["@mic@", "@desktop@"]), no_default_mic)
+    assert out == ["sink.a.monitor"]
