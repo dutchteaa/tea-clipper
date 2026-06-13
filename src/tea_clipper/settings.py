@@ -17,8 +17,7 @@ class Settings:
     bitrate_kbps: int = 30000
     fps: int = 60
     segment_seconds: int = 2       # rolling-buffer segment granularity
-    desktop_audio: bool = True
-    microphone: bool = True
+    audio_devices: list[str] = field(default_factory=lambda: ["@desktop@", "@mic@"])
     output_dir: str = field(default_factory=lambda: str(Path.home() / "Videos" / "tea-clipper"))
     buffer_dir: str = field(default_factory=lambda: str(Path.home() / ".cache" / "tea-clipper" / "buffer"))
     source_restore_token: str = ""

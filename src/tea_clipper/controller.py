@@ -85,6 +85,11 @@ class Controller:
 
 def build_controller(settings, portal=None) -> Controller:
     """Wire the real components: portal capture → pipeline → buffer + recorder → hotkeys."""
+    from tea_clipper.audio import (
+        build_audio_fragment,
+        discover_audio_devices,
+        resolve_audio_devices,
+    )
     from tea_clipper.encoders import EncoderRegistry
     from tea_clipper.manual_recorder import ManualRecorder
     from tea_clipper.pipeline import CapturePipeline
@@ -94,12 +99,14 @@ def build_controller(settings, portal=None) -> Controller:
     if portal is None:
         portal = PortalManager(settings)
     video = portal.open()
+    devices = resolve_audio_devices(settings, discover_audio_devices())
+    audio = build_audio_fragment(devices)
     spec = EncoderRegistry().resolve(
         settings.codec, hardware=settings.hardware, bitrate_kbps=settings.bitrate_kbps,
         fps=settings.fps, segment_seconds=settings.segment_seconds,
     )
     pipeline = CapturePipeline(
-        source_desc=(video, None), encoder=spec, buffer_dir=settings.buffer_dir,
+        source_desc=(video, audio), encoder=spec, buffer_dir=settings.buffer_dir,
         segment_seconds=settings.segment_seconds, max_segments=compute_max_segments(settings),
     )
     replay = ReplayBuffer(segment_seconds=settings.segment_seconds)

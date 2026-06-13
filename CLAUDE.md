@@ -184,37 +184,86 @@ Spec: `docs/superpowers/specs/2026-06-12-controller-design.md` · Plan:
 - `compute_max_segments` + `Controller` handlers/lifecycle are unit-tested with fakes
   (`tests/test_controller.py`); `build_controller`/entrypoint are probe-verified.
 
-**Last deferred milestones:** real desktop+mic audio mixing (`audiomixer` of two `pipewiresrc`;
-capture is currently video-only) and the PySide6 settings/status UI.
+**Last deferred milestone:** the PySide6 settings/status UI.
+
+## Status — Audio capture / desktop + mic mixing
+
+Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
+`docs/superpowers/plans/2026-06-13-audio.md`. Implemented (TDD) on the `audio` branch
+(stacked on `main`):
+
+- ✅ `audio.AudioDevice` + `audio.discover_audio_devices()` — enumerates **sinks** (desktop
+  audio, `is_monitor=True`) + real non-monitor **sources** (mics) by parsing `pactl list sinks`
+  and `pactl list sources` (Name = node.name, Description = display name), marking defaults via
+  `pactl get-default-sink`/`-source`. Degrades gracefully to `[]` if `pactl` is missing. The
+  pure parsers (`_parse_pactl_blocks`, `_parse_pactl_devices`) are **unit-tested**;
+  `discover_audio_devices` (live `pactl` I/O) is **probe-verified**.
+  **IMPORTANT — two PipeWire gotchas found during hardware verification:**
+  1. `Gst.DeviceMonitor` does **not** surface sink monitors on the target hardware → we use
+     `pactl` instead (its sink/source `Name`s are exactly what `pipewiresrc target-object=`
+     accepts).
+  2. There is **no `.monitor` node** in PipeWire — `<sink>.monitor` is a PulseAudio-compat
+     fiction. `pipewiresrc target-object=<...monitor>` matches no node and captures **silence**.
+     Desktop audio is captured by targeting the **sink** node with `stream.capture.sink=true`
+     (taps the sink's monitor ports); mics target real source nodes normally. (The mic happened
+     to work pre-fix only because it's the default source.)
+- ✅ `audio.resolve_audio_devices(settings, available)` + `audio.build_audio_fragment(devices)` —
+  pure, unit-tested. `resolve` expands the `@desktop@`/`@mic@` tokens to the default sink/mic,
+  passes literal `node.name`s through, skips unavailable entries (logged), de-dupes, and returns
+  **`AudioDevice` objects** (so the builder knows which need `stream.capture.sink`). `build`
+  assembles one `pipewiresrc target-object=<name> … ! amix.` chain per device (sinks add
+  `stream-properties="props,stream.capture.sink=true"`) into `audiomixer name=amix ! … !
+  audio/x-raw,channels=2 ! queue name=aenc_in` (stereo-pinned), or `None` when empty
+  (→ video-only). The pipeline already appends `! opusenc ! replaymux.audio_0`.
+- ✅ `Settings.audio_devices: list[str]` (default `["@desktop@", "@mic@"]`) **replaces** the old
+  `desktop_audio`/`microphone` booleans. `[]` = explicit no-audio. `Settings.load` drops unknown
+  keys, so an old config silently falls back to the new default (no migration needed).
+- ✅ `audio_probe.py` (`python -m tea_clipper.audio_probe`) — lists discoverable devices
+  (node.name + display name + desktop/mic + default flags) so users know what to put in
+  `audio_devices`; doubles as the hardware probe.
+- ✅ `build_controller` now passes the resolved mixed audio fragment to `CapturePipeline`
+  (`source_desc=(video, audio)` instead of `(video, None)`).
+- Unit tests in `tests/test_audio.py` (resolve/build/`_parse_pactl_devices`) + the settings
+  round-trip; `.venv/bin/pytest -m "engine or not engine"` is **60 passing**.
+- ✅ **Hardware-verified** on KDE/Wayland (AMD RDNA3): `python -m tea_clipper.audio_probe` lists
+  sinks `(desktop)` + mics with the JBL flagged `[default]`; the real
+  `discover → resolve(@desktop@/@mic@) → build_audio_fragment` chain fed `! opusenc ! matroskamux`
+  produced a **stereo** mixed-audio Opus clip with real desktop+mic signal (volumedetect
+  mean −31 dB / max −14 dB; the broken `.monitor` version measured −50 dB silence). The live
+  `python -m tea_clipper` daemon was also confirmed writing video+audio buffer segments
+  (H.264 2560×1440 + Opus), and a hotkey-saved clip measured mean −31 dB / max −6 dB of real
+  stereo signal.
+- 📌 **Open PR:** https://github.com/dutchteaa/tea-clipper/pull/5 (`audio` → `main`).
 
 ## NEXT SESSION — handoff
 
-**State:** the full capture daemon is built, tested, and hardware-verified end-to-end. All four
-milestones are merged to `main` (engine-core, PortalManager, HotkeyService, Controller); the suite
-is **40 passing** (`.venv/bin/pytest -m "engine or not engine"`). `python -m tea_clipper` runs a
-working clipper today.
+**State:** all five engine milestones are done and hardware-verified — the four core ones
+(engine-core, PortalManager, HotkeyService, Controller) are merged to `main`, and **audio** is
+complete on the `audio` branch with an **open PR → `main`** (see below). Suite is **60 passing**
+(`.venv/bin/pytest -m "engine or not engine"`). `python -m tea_clipper` records clips with real
+stereo desktop+mic audio today; fully end-to-end verified (a hotkey-saved clip measured
+mean −31 dB / max −6 dB of genuine signal).
 
-**Two milestones remain — recommended order:**
+**Immediate next step:** review + merge the audio PR
+(https://github.com/dutchteaa/tea-clipper/pull/5), then start the final milestone.
 
-1. **Real desktop + mic audio** (next). Capture is currently video-only. Plan: build the audio
-   half of `source_desc` from PipeWire sources — desktop audio (a monitor of the default sink) +
-   microphone — mixed via `audiomixer`, gated by `settings.desktop_audio` / `settings.microphone`.
-   The pipeline already accepts an audio fragment (the optional-audio work from PortalManager), so
-   this is mostly: discover the right `pipewiresrc` device(s) and assemble the mixed audio
-   fragment, then have `build_controller` pass it instead of `None`. Note: real audio devices are
-   their own `pipewiresrc` (NOT via the ScreenCast portal); device selection may want new
-   `Settings` fields. Follow the same brainstorm → spec → plan → TDD flow; verify with
-   `python -m tea_clipper` (clip should now have an audio track).
+**One milestone remains:**
 
-2. **PySide6 settings/status UI** (last). A small Qt form over `Settings` (clip length, codec,
-   bitrate, fps, audio toggles, output dir) + a status indicator + open-folder / re-pick-source
-   buttons, driving a `Controller`. KDE-native fit.
+1. **PySide6 settings/status UI** (last). A small Qt form over `Settings` (clip length, codec,
+   bitrate, fps, **`audio_devices` picker** driven by `audio.discover_audio_devices()`, output
+   dir) + a status indicator + open-folder / re-pick-source buttons, driving a `Controller`.
+   KDE-native fit. Note: `AudioDevice` already carries `display_name` + `is_monitor` (desktop) +
+   `is_default` flags, so the picker can render a friendly grouped list and write `node_name`s
+   (or `@desktop@`/`@mic@`) into `audio_devices`.
 
 **Gotchas worth remembering:**
 - `pipewiresrc` has cold-start latency — a clip saved within the first few seconds of launch is
   short because the buffer isn't full yet. Irrelevant once it's been running a while.
-- Engine/portal/hotkey real-D-Bus wrappers are **not** unit-tested (can't run headlessly); they're
-  verified by the `*_probe.py` scripts and `python -m tea_clipper`. Keep that split — unit-test the
-  pure/orchestration logic with fakes, probe the raw D-Bus on hardware.
+- Engine/portal/hotkey/audio real-D-Bus & device-enumeration code is **not** unit-tested (can't
+  run headlessly); it's verified by the `*_probe.py` scripts and `python -m tea_clipper`. Keep
+  that split — unit-test the pure/orchestration logic with fakes, probe the rest on hardware.
+- Audio default-device detection shells out to `pactl` (PipeWire's PulseAudio-compat CLI) — a
+  runtime dep in the same spirit as the `ffmpeg` subprocess and the `gst-plugins-good` requirement.
+  It degrades gracefully if absent (the `@desktop@`/`@mic@` tokens just resolve to nothing).
 - Git push auth on this machine goes through KWallet (see agent memory `git-auth-kwallet`); first
   push for a new token must be interactive.
