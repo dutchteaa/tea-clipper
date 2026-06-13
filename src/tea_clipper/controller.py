@@ -99,9 +99,8 @@ def build_controller(settings, portal=None) -> Controller:
     if portal is None:
         portal = PortalManager(settings)
     video = portal.open()
-    audio = build_audio_fragment(
-        resolve_audio_devices(settings, discover_audio_devices())
-    )
+    devices = resolve_audio_devices(settings, discover_audio_devices())
+    audio = build_audio_fragment(devices)
     spec = EncoderRegistry().resolve(
         settings.codec, hardware=settings.hardware, bitrate_kbps=settings.bitrate_kbps,
         fps=settings.fps, segment_seconds=settings.segment_seconds,
