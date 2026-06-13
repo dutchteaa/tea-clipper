@@ -57,9 +57,12 @@ def test_literal_names_pass_through():
     assert out == ["mic.b", "sink.b.monitor"]
 
 
-def test_unavailable_entries_are_skipped():
-    out = resolve_audio_devices(_S(["mic.a", "ghost.device"]), _available())
+def test_unavailable_entries_are_skipped(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger="tea_clipper"):
+        out = resolve_audio_devices(_S(["mic.a", "ghost.device"]), _available())
     assert out == ["mic.a"]
+    assert "ghost.device" in caplog.text
 
 
 def test_order_preserved_and_deduped():

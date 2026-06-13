@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import subprocess
 from dataclasses import dataclass
+from typing import Protocol
 
 from tea_clipper.gst_init import ensure_gst  # registers gi version first
 
@@ -47,9 +48,13 @@ def build_audio_fragment(device_names: list[str]) -> str | None:
     return " ".join(chains)
 
 
-def resolve_audio_devices(settings, available: list["AudioDevice"]) -> list[str]:
+class _SettingsLike(Protocol):
+    audio_devices: list[str]
+
+
+def resolve_audio_devices(settings: _SettingsLike, available: list[AudioDevice]) -> list[str]:
     """Expand settings.audio_devices into concrete node names, skipping unavailable ones."""
-    by_name = {d.node_name for d in available}
+    known_names = {d.node_name for d in available}
     default_monitor = next(
         (d.node_name for d in available if d.is_monitor and d.is_default), None
     )
@@ -69,7 +74,7 @@ def resolve_audio_devices(settings, available: list["AudioDevice"]) -> list[str]
             if name is None:
                 log.warning("no default microphone device available; skipping")
                 continue
-        elif entry in by_name:
+        elif entry in known_names:
             name = entry
         else:
             log.warning("configured audio device %r not available; skipping", entry)
