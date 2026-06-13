@@ -13,6 +13,7 @@ def test_single_device_builds_one_source_into_mixer():
     assert "audiomixer name=amix" in frag
     # the fragment must end on the pad the pipeline links opusenc onto
     assert frag.rstrip().endswith("queue name=aenc_in")
+    assert "! amix." in frag
 
 
 def test_multiple_devices_each_link_into_the_mixer():
@@ -23,3 +24,4 @@ def test_multiple_devices_each_link_into_the_mixer():
     assert "target-object=sink.monitor" in frag
     assert "audiomixer name=amix" in frag
     assert frag.rstrip().endswith("queue name=aenc_in")
+    assert "audioconvert" in frag
