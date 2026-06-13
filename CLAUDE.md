@@ -192,22 +192,29 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
 `docs/superpowers/plans/2026-06-13-audio.md`. Implemented (TDD) on the `audio` branch
 (stacked on `main`):
 
-- ✅ `audio.AudioDevice` + `audio.discover_audio_devices()` — enumerates capturable nodes by
-  parsing `pactl list sources` (Name = node.name, Description = display name) and marks defaults
-  via `pactl get-default-sink`/`-source` (the default sink's monitor is `<sink>.monitor`).
-  Degrades gracefully to `[]` if `pactl` is missing. The pure `_parse_pactl_sources` parser is
-  **unit-tested**; `discover_audio_devices` (the live `pactl` I/O) is **probe-verified**.
-  **IMPORTANT — why not GstDeviceMonitor (the original spec choice):** on the target hardware,
-  `Gst.DeviceMonitor`'s PipeWire provider does **not** surface sink *monitor* sources under
-  `Audio/Source` (only hardware mics), making desktop-audio capture impossible. `pactl` lists
-  both, and its source names are exactly what `pipewiresrc target-object=` accepts. This was
-  found + fixed during hardware verification.
-- ✅ `audio.resolve_audio_devices(settings, available)` + `audio.build_audio_fragment(names)` —
-  pure, unit-tested. `resolve` expands the `@desktop@`/`@mic@` tokens to the default
-  monitor/mic, passes literal `node.name`s through, skips unavailable entries (logged), and
-  de-dupes. `build` assembles the launch fragment: one `pipewiresrc target-object=<name> ! …
-  ! amix.` chain per device into `audiomixer name=amix ! … ! queue name=aenc_in`, or `None`
-  when empty (→ video-only). The pipeline already appends `! opusenc ! replaymux.audio_0`.
+- ✅ `audio.AudioDevice` + `audio.discover_audio_devices()` — enumerates **sinks** (desktop
+  audio, `is_monitor=True`) + real non-monitor **sources** (mics) by parsing `pactl list sinks`
+  and `pactl list sources` (Name = node.name, Description = display name), marking defaults via
+  `pactl get-default-sink`/`-source`. Degrades gracefully to `[]` if `pactl` is missing. The
+  pure parsers (`_parse_pactl_blocks`, `_parse_pactl_devices`) are **unit-tested**;
+  `discover_audio_devices` (live `pactl` I/O) is **probe-verified**.
+  **IMPORTANT — two PipeWire gotchas found during hardware verification:**
+  1. `Gst.DeviceMonitor` does **not** surface sink monitors on the target hardware → we use
+     `pactl` instead (its sink/source `Name`s are exactly what `pipewiresrc target-object=`
+     accepts).
+  2. There is **no `.monitor` node** in PipeWire — `<sink>.monitor` is a PulseAudio-compat
+     fiction. `pipewiresrc target-object=<...monitor>` matches no node and captures **silence**.
+     Desktop audio is captured by targeting the **sink** node with `stream.capture.sink=true`
+     (taps the sink's monitor ports); mics target real source nodes normally. (The mic happened
+     to work pre-fix only because it's the default source.)
+- ✅ `audio.resolve_audio_devices(settings, available)` + `audio.build_audio_fragment(devices)` —
+  pure, unit-tested. `resolve` expands the `@desktop@`/`@mic@` tokens to the default sink/mic,
+  passes literal `node.name`s through, skips unavailable entries (logged), de-dupes, and returns
+  **`AudioDevice` objects** (so the builder knows which need `stream.capture.sink`). `build`
+  assembles one `pipewiresrc target-object=<name> … ! amix.` chain per device (sinks add
+  `stream-properties="props,stream.capture.sink=true"`) into `audiomixer name=amix ! … !
+  audio/x-raw,channels=2 ! queue name=aenc_in` (stereo-pinned), or `None` when empty
+  (→ video-only). The pipeline already appends `! opusenc ! replaymux.audio_0`.
 - ✅ `Settings.audio_devices: list[str]` (default `["@desktop@", "@mic@"]`) **replaces** the old
   `desktop_audio`/`microphone` booleans. `[]` = explicit no-audio. `Settings.load` drops unknown
   keys, so an old config silently falls back to the new default (no migration needed).
@@ -216,17 +223,15 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
   `audio_devices`; doubles as the hardware probe.
 - ✅ `build_controller` now passes the resolved mixed audio fragment to `CapturePipeline`
   (`source_desc=(video, audio)` instead of `(video, None)`).
-- Unit tests in `tests/test_audio.py` (resolve/build/`_parse_pactl_sources`) + the settings
-  round-trip; `.venv/bin/pytest -m "engine or not engine"` is **56 passing**.
+- Unit tests in `tests/test_audio.py` (resolve/build/`_parse_pactl_devices`) + the settings
+  round-trip; `.venv/bin/pytest -m "engine or not engine"` is **60 passing**.
 - ✅ **Hardware-verified** on KDE/Wayland (AMD RDNA3): `python -m tea_clipper.audio_probe` lists
-  5 devices with the default sink's `.monitor` flagged `(desktop) [default]` and the default mic
-  `(mic) [default]`; the real `discover → resolve(@desktop@/@mic@) → build_audio_fragment` chain
-  fed `! opusenc ! matroskamux` produced a 3s mixed-audio Opus clip (`target-object=<node.name>`
-  selection confirmed working). Remaining: a full `python -m tea_clipper` run exercising
-  video+audio together with the portal/hotkeys (the audio path itself is proven).
-- 🔧 **Known refinement (not blocking):** the mixed output negotiated to **mono** because the mic
-  is mono; desktop audio would ideally stay stereo. A per-chain or mixer-output
-  `audio/x-raw,channels=2` capsfilter would force stereo if wanted.
+  sinks `(desktop)` + mics with the JBL flagged `[default]`; the real
+  `discover → resolve(@desktop@/@mic@) → build_audio_fragment` chain fed `! opusenc ! matroskamux`
+  produced a **stereo** mixed-audio Opus clip with real desktop+mic signal (volumedetect
+  mean −31 dB / max −14 dB; the broken `.monitor` version measured −50 dB silence). The live
+  `python -m tea_clipper` daemon was also confirmed writing video+audio buffer segments
+  (H.264 2560×1440 + Opus). Remaining nicety: a final by-ear `python -m tea_clipper` clip.
 
 ## NEXT SESSION — handoff
 

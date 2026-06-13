@@ -2,12 +2,22 @@
 
 **Date:** 2026-06-13 · **Status:** Implemented (with one amendment — see below)
 
-> **Amendment (during hardware verification):** discovery was switched from `Gst.DeviceMonitor`
-> to parsing `pactl list sources`. On the target hardware, GStreamer's PipeWire device provider
-> does not surface sink *monitor* sources (desktop audio) under `Audio/Source`, only hardware
-> mics — which would make desktop-audio capture impossible. `pactl` lists both and its source
-> names are exactly what `pipewiresrc target-object=` accepts. The pure parser
-> (`_parse_pactl_sources`) is unit-tested; the rest of the design below is unchanged.
+> **Amendments (during hardware verification) — two PipeWire realities the original design
+> got wrong:**
+>
+> 1. **Discovery:** switched from `Gst.DeviceMonitor` to parsing `pactl list sinks`/`sources`.
+>    GStreamer's PipeWire provider doesn't surface sink monitors on the target hardware, only
+>    mics. `pactl` lists everything and its `Name`s are exactly what `pipewiresrc target-object=`
+>    accepts.
+> 2. **Desktop-audio capture:** there is **no `.monitor` node** in PipeWire — `<sink>.monitor`
+>    is a PulseAudio-compat fiction, so `pipewiresrc target-object=<...monitor>` captures
+>    *silence*. Desktop audio is captured by targeting the **sink** node with
+>    `stream.capture.sink=true`. So `AudioDevice.is_monitor=True` now means "a sink captured as
+>    desktop audio", `resolve_audio_devices` returns `AudioDevice` objects (not bare names) so
+>    the builder can add that property, and the mixer output is pinned to stereo.
+>
+> Pure parsers (`_parse_pactl_blocks`, `_parse_pactl_devices`) and the builder/resolver are
+> unit-tested; the high-level component/flow design below is otherwise unchanged.
 
 ## Goal
 
