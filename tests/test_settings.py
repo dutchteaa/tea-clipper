@@ -24,3 +24,25 @@ def test_toml_round_trip(tmp_path: Path):
 def test_load_missing_file_returns_defaults(tmp_path: Path):
     loaded = Settings.load(tmp_path / "nope.toml")
     assert loaded == Settings()
+
+
+def test_audio_devices_default_is_desktop_and_mic():
+    s = Settings()
+    assert s.audio_devices == ["@desktop@", "@mic@"]
+
+
+def test_audio_devices_round_trip(tmp_path: Path):
+    s = Settings(audio_devices=["@mic@", "alsa_input.usb-Blue_Yeti.analog-stereo"])
+    cfg = tmp_path / "config.toml"
+    s.save(cfg)
+    assert Settings.load(cfg).audio_devices == [
+        "@mic@",
+        "alsa_input.usb-Blue_Yeti.analog-stereo",
+    ]
+
+
+def test_audio_devices_empty_means_no_audio(tmp_path: Path):
+    s = Settings(audio_devices=[])
+    cfg = tmp_path / "config.toml"
+    s.save(cfg)
+    assert Settings.load(cfg).audio_devices == []
