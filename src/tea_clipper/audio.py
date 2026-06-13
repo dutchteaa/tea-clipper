@@ -82,3 +82,59 @@ def resolve_audio_devices(settings: _SettingsLike, available: list[AudioDevice])
         if name not in resolved:
             resolved.append(name)
     return resolved
+
+
+def _default_node_names() -> tuple[str | None, str | None]:
+    """(default_sink_monitor_node, default_source_node) via pactl; (None, None) on failure."""
+
+    def query(kind: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["pactl", "get-default-" + kind],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        name = result.stdout.strip()
+        return name or None
+
+    sink = query("sink")
+    source = query("source")
+    monitor = f"{sink}.monitor" if sink else None
+    return monitor, source
+
+
+def discover_audio_devices() -> list[AudioDevice]:
+    """Enumerate capturable audio nodes via GStreamer's PipeWire device provider."""
+    ensure_gst()
+    monitor = Gst.DeviceMonitor.new()
+    monitor.add_filter("Audio/Source", None)
+    monitor.start()
+    try:
+        gst_devices = monitor.get_devices()
+    finally:
+        monitor.stop()
+
+    default_monitor, default_source = _default_node_names()
+
+    devices: list[AudioDevice] = []
+    for dev in gst_devices:
+        props = dev.get_properties()
+        node_name = props.get_string("node.name") if props is not None else None
+        if not node_name:
+            continue
+        media_class = (props.get_string("media.class") or "") if props is not None else ""
+        is_monitor = node_name.endswith(".monitor") or "Monitor" in media_class
+        is_default = node_name in (default_monitor, default_source)
+        devices.append(
+            AudioDevice(
+                node_name=node_name,
+                display_name=dev.get_display_name(),
+                is_monitor=is_monitor,
+                is_default=is_default,
+            )
+        )
+    return devices
