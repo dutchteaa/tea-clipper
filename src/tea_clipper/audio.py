@@ -1,13 +1,21 @@
 """Audio device discovery, selection resolution, and launch-fragment assembly.
 
 Real audio devices are their own ``pipewiresrc`` nodes (NOT the ScreenCast portal).
-Pure helpers (``resolve_audio_devices``, ``build_audio_fragment``, ``_parse_pactl_sources``)
+Pure helpers (``resolve_audio_devices``, ``build_audio_fragment``, ``_parse_pactl_devices``)
 are unit-tested; ``discover_audio_devices`` shells out to ``pactl`` and is probe-verified.
 
-We enumerate via ``pactl`` rather than ``Gst.DeviceMonitor`` because the latter does not
-surface sink *monitor* sources (desktop audio) on PipeWire — only hardware inputs — which
-would make desktop-audio capture impossible. ``pactl list sources`` lists both, and the
-node names it reports are exactly what ``pipewiresrc target-object=`` accepts.
+Desktop audio vs. mic — the PipeWire reality (learned during hardware verification):
+
+* There is **no** ``.monitor`` *node* in PipeWire — the ``<sink>.monitor`` names ``pactl``
+  reports are a PulseAudio-compatibility fiction. ``pipewiresrc target-object=<...monitor>``
+  matches no real node and silently captures silence.
+* To capture **desktop audio** you target the **sink** node itself and set the stream
+  property ``stream.capture.sink=true`` (this taps the sink's monitor ports).
+* To capture a **mic** you target a real **source** node normally.
+
+So we enumerate sinks (desktop) and real (non-monitor) sources (mics) via ``pactl``; their
+``Name`` is exactly the node name ``pipewiresrc target-object=`` accepts. (``Gst.DeviceMonitor``
+is not used: on the target hardware it doesn't surface sink monitors at all.)
 """
 
 from __future__ import annotations
@@ -27,24 +35,38 @@ MIC_TOKEN = "@mic@"
 class AudioDevice:
     node_name: str          # stable PipeWire node.name; the identifier stored in config
     display_name: str       # human-readable label for the probe / future UI
-    is_monitor: bool        # True = sink monitor (desktop audio); False = input (mic)
+    is_monitor: bool        # True = a sink we capture as desktop audio; False = input (mic)
     is_default: bool        # True = system default for its kind
 
 
-def build_audio_fragment(device_names: list[str]) -> str | None:
-    """Capture each node and mix them via ``audiomixer``; ``None`` if no devices.
+def _device_fragment(device: AudioDevice) -> str:
+    """One ``pipewiresrc`` capture chain feeding the shared ``audiomixer``.
+
+    Desktop (sink) devices need ``stream.capture.sink=true`` so pipewiresrc taps the sink's
+    monitor ports rather than treating it as a (silent) regular source.
+    """
+    props = ""
+    if device.is_monitor:
+        props = ' stream-properties="props,stream.capture.sink=true"'
+    return (
+        f"pipewiresrc target-object={device.node_name}{props} ! "
+        "audioconvert ! audioresample ! queue ! amix."
+    )
+
+
+def build_audio_fragment(devices: list[AudioDevice]) -> str | None:
+    """Capture each device and mix them via ``audiomixer``; ``None`` if no devices.
 
     The returned fragment ends in ``queue name=aenc_in`` so the pipeline can append
-    ``! opusenc ! replaymux.audio_0`` exactly as it does for the test source.
+    ``! opusenc ! replaymux.audio_0`` exactly as it does for the test source. The mixer
+    output is pinned to stereo so a mono mic doesn't collapse desktop audio to mono.
     """
-    if not device_names:
+    if not devices:
         return None
-    chains = [
-        f"pipewiresrc target-object={name} ! audioconvert ! audioresample ! queue ! amix."
-        for name in device_names
-    ]
+    chains = [_device_fragment(d) for d in devices]
     chains.append(
-        "audiomixer name=amix ! audioconvert ! audioresample ! queue name=aenc_in"
+        "audiomixer name=amix ! audioconvert ! audioresample ! "
+        "audio/x-raw,channels=2 ! queue name=aenc_in"
     )
     return " ".join(chains)
 
@@ -53,35 +75,43 @@ class _SettingsLike(Protocol):
     audio_devices: list[str]
 
 
-def resolve_audio_devices(settings: _SettingsLike, available: list[AudioDevice]) -> list[str]:
-    """Expand settings.audio_devices into concrete node names, skipping unavailable ones."""
-    known_names = {d.node_name for d in available}
+def resolve_audio_devices(
+    settings: _SettingsLike, available: list[AudioDevice]
+) -> list[AudioDevice]:
+    """Expand settings.audio_devices into concrete devices, skipping unavailable ones.
+
+    Returns ``AudioDevice`` objects (not just names) so the fragment builder knows whether
+    each is a sink (desktop) or a source (mic). Order preserved; duplicates removed.
+    """
+    by_name = {d.node_name: d for d in available}
     default_monitor = next(
-        (d.node_name for d in available if d.is_monitor and d.is_default), None
+        (d for d in available if d.is_monitor and d.is_default), None
     )
     default_mic = next(
-        (d.node_name for d in available if not d.is_monitor and d.is_default), None
+        (d for d in available if not d.is_monitor and d.is_default), None
     )
 
-    resolved: list[str] = []
+    resolved: list[AudioDevice] = []
+    seen: set[str] = set()
     for entry in settings.audio_devices:
         if entry == DESKTOP_TOKEN:
-            name = default_monitor
-            if name is None:
-                log.warning("no default desktop-audio (monitor) device available; skipping")
+            device = default_monitor
+            if device is None:
+                log.warning("no default desktop-audio (sink) device available; skipping")
                 continue
         elif entry == MIC_TOKEN:
-            name = default_mic
-            if name is None:
+            device = default_mic
+            if device is None:
                 log.warning("no default microphone device available; skipping")
                 continue
-        elif entry in known_names:
-            name = entry
+        elif entry in by_name:
+            device = by_name[entry]
         else:
             log.warning("configured audio device %r not available; skipping", entry)
             continue
-        if name not in resolved:
-            resolved.append(name)
+        if device.node_name not in seen:
+            seen.add(device.node_name)
+            resolved.append(device)
     return resolved
 
 
@@ -100,18 +130,13 @@ def _run_pactl(args: list[str]) -> str | None:
     return result.stdout
 
 
-def _parse_pactl_sources(
-    list_output: str, default_sink: str | None, default_source: str | None
-) -> list[AudioDevice]:
-    """Parse ``pactl list sources`` into AudioDevices. Pure; unit-tested.
+def _parse_pactl_blocks(list_output: str) -> list[tuple[str, str]]:
+    """Extract ``(node_name, display_name)`` pairs from ``pactl list sinks|sources`` text.
 
-    Each source block contains a ``Name:`` (the node name, what ``pipewiresrc
-    target-object=`` wants) followed by a ``Description:`` (human-readable). A sink's
-    monitor is named ``<sink>.monitor``, so the default sink's monitor is the default
-    desktop-audio device.
+    Each block has a ``Name:`` (the node name) followed by a ``Description:`` (human label);
+    other interleaved fields are ignored.
     """
-    default_monitor = f"{default_sink}.monitor" if default_sink else None
-    devices: list[AudioDevice] = []
+    pairs: list[tuple[str, str]] = []
     name: str | None = None
     for raw in list_output.splitlines():
         line = raw.strip()
@@ -119,23 +144,55 @@ def _parse_pactl_sources(
             name = line[len("Name:"):].strip()
         elif line.startswith("Description:") and name is not None:
             description = line[len("Description:"):].strip()
-            devices.append(
-                AudioDevice(
-                    node_name=name,
-                    display_name=description or name,
-                    is_monitor=name.endswith(".monitor"),
-                    is_default=name in (default_monitor, default_source),
-                )
-            )
+            pairs.append((name, description or name))
             name = None
+    return pairs
+
+
+def _parse_pactl_devices(
+    sinks_output: str,
+    sources_output: str,
+    default_sink: str | None,
+    default_source: str | None,
+) -> list[AudioDevice]:
+    """Build the AudioDevice list from ``pactl list sinks`` + ``sources``. Pure; unit-tested.
+
+    Sinks become desktop devices (``is_monitor=True``, captured via ``stream.capture.sink``);
+    real sources become mics. Pulse-compat ``<sink>.monitor`` source names are dropped — they
+    are not real PipeWire nodes (the sink itself is the capture target).
+    """
+    devices: list[AudioDevice] = []
+    for node_name, display_name in _parse_pactl_blocks(sinks_output):
+        devices.append(
+            AudioDevice(
+                node_name=node_name,
+                display_name=display_name,
+                is_monitor=True,
+                is_default=node_name == default_sink,
+            )
+        )
+    for node_name, display_name in _parse_pactl_blocks(sources_output):
+        if node_name.endswith(".monitor"):
+            continue  # pulse-compat fiction; capture the sink instead
+        devices.append(
+            AudioDevice(
+                node_name=node_name,
+                display_name=display_name,
+                is_monitor=False,
+                is_default=node_name == default_source,
+            )
+        )
     return devices
 
 
 def discover_audio_devices() -> list[AudioDevice]:
-    """Enumerate capturable audio nodes (mics + sink monitors) via ``pactl``."""
-    list_output = _run_pactl(["list", "sources"])
-    if not list_output:
+    """Enumerate capturable audio nodes (sinks for desktop + real mics) via ``pactl``."""
+    sinks_output = _run_pactl(["list", "sinks"])
+    sources_output = _run_pactl(["list", "sources"])
+    if not sinks_output and not sources_output:
         return []
     default_sink = (_run_pactl(["get-default-sink"]) or "").strip() or None
     default_source = (_run_pactl(["get-default-source"]) or "").strip() or None
-    return _parse_pactl_sources(list_output, default_sink, default_source)
+    return _parse_pactl_devices(
+        sinks_output or "", sources_output or "", default_sink, default_source
+    )
