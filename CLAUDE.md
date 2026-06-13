@@ -231,7 +231,9 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
   produced a **stereo** mixed-audio Opus clip with real desktop+mic signal (volumedetect
   mean −31 dB / max −14 dB; the broken `.monitor` version measured −50 dB silence). The live
   `python -m tea_clipper` daemon was also confirmed writing video+audio buffer segments
-  (H.264 2560×1440 + Opus). Remaining nicety: a final by-ear `python -m tea_clipper` clip.
+  (H.264 2560×1440 + Opus), and a hotkey-saved clip measured mean −31 dB / max −6 dB of real
+  stereo signal.
+- 📌 **Open PR:** https://github.com/dutchteaa/tea-clipper/pull/5 (`audio` → `main`).
 
 ## NEXT SESSION — handoff
 
@@ -242,8 +244,8 @@ complete on the `audio` branch with an **open PR → `main`** (see below). Suite
 stereo desktop+mic audio today; fully end-to-end verified (a hotkey-saved clip measured
 mean −31 dB / max −6 dB of genuine signal).
 
-**Immediate next step:** review + merge the audio PR (link recorded in the Audio capture status
-section above), then start the final milestone.
+**Immediate next step:** review + merge the audio PR
+(https://github.com/dutchteaa/tea-clipper/pull/5), then start the final milestone.
 
 **One milestone remains:**
 
