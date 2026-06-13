@@ -235,25 +235,24 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
 
 ## NEXT SESSION — handoff
 
-**State:** the four core milestones (engine-core, PortalManager, HotkeyService, Controller) are
-merged to `main` and hardware-verified. The **audio** milestone is built, unit-tested, and
-audio-path hardware-verified on the `audio` branch (suite **56 passing**,
-`.venv/bin/pytest -m "engine or not engine"`); discovery was switched from GstDeviceMonitor to
-`pactl` during verification (see the Audio capture status above). `python -m tea_clipper` runs a
-working clipper today.
+**State:** all five engine milestones are done and hardware-verified — the four core ones
+(engine-core, PortalManager, HotkeyService, Controller) are merged to `main`, and **audio** is
+complete on the `audio` branch with an **open PR → `main`** (see below). Suite is **60 passing**
+(`.venv/bin/pytest -m "engine or not engine"`). `python -m tea_clipper` records clips with real
+stereo desktop+mic audio today; fully end-to-end verified (a hotkey-saved clip measured
+mean −31 dB / max −6 dB of genuine signal).
 
-**Optional final confirm before/after merging `audio`:** a full `python -m tea_clipper` run —
-play audio + speak, press save hotkey, Ctrl-C, then
-`ffprobe "$(ls -t ~/Videos/tea-clipper/clip_*.mkv | head -1)"` should show an Opus audio stream
-alongside the H.264 video. (The audio path is already proven in isolation; this just confirms
-video+audio muxing together under the live portal/hotkeys.)
+**Immediate next step:** review + merge the audio PR (link recorded in the Audio capture status
+section above), then start the final milestone.
 
 **One milestone remains:**
 
 1. **PySide6 settings/status UI** (last). A small Qt form over `Settings` (clip length, codec,
    bitrate, fps, **`audio_devices` picker** driven by `audio.discover_audio_devices()`, output
    dir) + a status indicator + open-folder / re-pick-source buttons, driving a `Controller`.
-   KDE-native fit.
+   KDE-native fit. Note: `AudioDevice` already carries `display_name` + `is_monitor` (desktop) +
+   `is_default` flags, so the picker can render a friendly grouped list and write `node_name`s
+   (or `@desktop@`/`@mic@`) into `audio_devices`.
 
 **Gotchas worth remembering:**
 - `pipewiresrc` has cold-start latency — a clip saved within the first few seconds of launch is
