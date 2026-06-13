@@ -1,6 +1,13 @@
 # Audio Capture Design — Desktop + Mic Mixing
 
-**Date:** 2026-06-13 · **Status:** Approved
+**Date:** 2026-06-13 · **Status:** Implemented (with one amendment — see below)
+
+> **Amendment (during hardware verification):** discovery was switched from `Gst.DeviceMonitor`
+> to parsing `pactl list sources`. On the target hardware, GStreamer's PipeWire device provider
+> does not surface sink *monitor* sources (desktop audio) under `Audio/Source`, only hardware
+> mics — which would make desktop-audio capture impossible. `pactl` lists both and its source
+> names are exactly what `pipewiresrc target-object=` accepts. The pure parser
+> (`_parse_pactl_sources`) is unit-tested; the rest of the design below is unchanged.
 
 ## Goal
 

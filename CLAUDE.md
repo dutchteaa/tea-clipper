@@ -192,12 +192,16 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
 `docs/superpowers/plans/2026-06-13-audio.md`. Implemented (TDD) on the `audio` branch
 (stacked on `main`):
 
-- ✅ `audio.AudioDevice` + `audio.discover_audio_devices()` — enumerates capturable nodes via
-  `Gst.DeviceMonitor` (`Audio/Source` surfaces sink monitors *and* mics; GStreamer-native, no
-  new Python dep) and marks system defaults via `pactl get-default-sink`/`-source` (PipeWire's
-  pactl returns `node.name`s; the default sink's monitor is `<sink>.monitor`). Degrades
-  gracefully if `pactl` is missing (no device marked default). **Probe-verified, not
-  unit-tested** (needs live PipeWire) — same split as the portal/hotkey wrappers.
+- ✅ `audio.AudioDevice` + `audio.discover_audio_devices()` — enumerates capturable nodes by
+  parsing `pactl list sources` (Name = node.name, Description = display name) and marks defaults
+  via `pactl get-default-sink`/`-source` (the default sink's monitor is `<sink>.monitor`).
+  Degrades gracefully to `[]` if `pactl` is missing. The pure `_parse_pactl_sources` parser is
+  **unit-tested**; `discover_audio_devices` (the live `pactl` I/O) is **probe-verified**.
+  **IMPORTANT — why not GstDeviceMonitor (the original spec choice):** on the target hardware,
+  `Gst.DeviceMonitor`'s PipeWire provider does **not** surface sink *monitor* sources under
+  `Audio/Source` (only hardware mics), making desktop-audio capture impossible. `pactl` lists
+  both, and its source names are exactly what `pipewiresrc target-object=` accepts. This was
+  found + fixed during hardware verification.
 - ✅ `audio.resolve_audio_devices(settings, available)` + `audio.build_audio_fragment(names)` —
   pure, unit-tested. `resolve` expands the `@desktop@`/`@mic@` tokens to the default
   monitor/mic, passes literal `node.name`s through, skips unavailable entries (logged), and
@@ -212,30 +216,34 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
   `audio_devices`; doubles as the hardware probe.
 - ✅ `build_controller` now passes the resolved mixed audio fragment to `CapturePipeline`
   (`source_desc=(video, audio)` instead of `(video, None)`).
-- Unit tests in `tests/test_audio.py` (resolve/build) + the settings round-trip;
-  `.venv/bin/pytest -m "engine or not engine"` is **52 passing**.
-- ⚠️ **Hardware verification still PENDING** — the code-side milestone is complete and the unit
-  suite is green, but `python -m tea_clipper.audio_probe` and an audio-track clip from
-  `python -m tea_clipper` (verify with `ffprobe`) have NOT yet been run on the KDE/Wayland box.
-  One thing to confirm there: that `pipewiresrc target-object=<node.name>` selects the right
-  node (vs. needing a serial/path); if not, adjust `build_audio_fragment` + the probe's printed
-  identifier together. Real desktop+mic audio mixing was the last deferred engine milestone.
+- Unit tests in `tests/test_audio.py` (resolve/build/`_parse_pactl_sources`) + the settings
+  round-trip; `.venv/bin/pytest -m "engine or not engine"` is **56 passing**.
+- ✅ **Hardware-verified** on KDE/Wayland (AMD RDNA3): `python -m tea_clipper.audio_probe` lists
+  5 devices with the default sink's `.monitor` flagged `(desktop) [default]` and the default mic
+  `(mic) [default]`; the real `discover → resolve(@desktop@/@mic@) → build_audio_fragment` chain
+  fed `! opusenc ! matroskamux` produced a 3s mixed-audio Opus clip (`target-object=<node.name>`
+  selection confirmed working). Remaining: a full `python -m tea_clipper` run exercising
+  video+audio together with the portal/hotkeys (the audio path itself is proven).
+- 🔧 **Known refinement (not blocking):** the mixed output negotiated to **mono** because the mic
+  is mono; desktop audio would ideally stay stereo. A per-chain or mixer-output
+  `audio/x-raw,channels=2` capsfilter would force stereo if wanted.
 
 ## NEXT SESSION — handoff
 
 **State:** the four core milestones (engine-core, PortalManager, HotkeyService, Controller) are
-merged to `main` and hardware-verified. The **audio** milestone is built + unit-tested on the
-`audio` branch (suite **52 passing**, `.venv/bin/pytest -m "engine or not engine"`) but its
-**hardware verification is still pending** (see the Audio capture status above). `python -m
-tea_clipper` runs a working clipper today.
+merged to `main` and hardware-verified. The **audio** milestone is built, unit-tested, and
+audio-path hardware-verified on the `audio` branch (suite **56 passing**,
+`.venv/bin/pytest -m "engine or not engine"`); discovery was switched from GstDeviceMonitor to
+`pactl` during verification (see the Audio capture status above). `python -m tea_clipper` runs a
+working clipper today.
 
-**Immediate next step — verify audio on hardware (before merging `audio`):**
-- `.venv/bin/python -m tea_clipper.audio_probe` — confirm devices list, defaults flagged.
-- `.venv/bin/python -m tea_clipper` — play audio + speak, press save hotkey, Ctrl-C; then
-  `ffprobe "$(ls -t ~/Videos/tea-clipper/clip_*.mkv | head -1)"` should show an Opus audio stream
-  alongside the H.264 video. If `target-object` selection misbehaves, see the ⚠️ note above.
+**Optional final confirm before/after merging `audio`:** a full `python -m tea_clipper` run —
+play audio + speak, press save hotkey, Ctrl-C, then
+`ffprobe "$(ls -t ~/Videos/tea-clipper/clip_*.mkv | head -1)"` should show an Opus audio stream
+alongside the H.264 video. (The audio path is already proven in isolation; this just confirms
+video+audio muxing together under the live portal/hotkeys.)
 
-**One milestone remains after that:**
+**One milestone remains:**
 
 1. **PySide6 settings/status UI** (last). A small Qt form over `Settings` (clip length, codec,
    bitrate, fps, **`audio_devices` picker** driven by `audio.discover_audio_devices()`, output
