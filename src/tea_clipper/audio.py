@@ -132,7 +132,7 @@ def discover_audio_devices() -> list[AudioDevice]:
         devices.append(
             AudioDevice(
                 node_name=node_name,
-                display_name=dev.get_display_name(),
+                display_name=dev.get_display_name() or node_name,
                 is_monitor=is_monitor,
                 is_default=is_default,
             )
