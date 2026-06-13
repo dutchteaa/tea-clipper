@@ -1,8 +1,13 @@
 """Audio device discovery, selection resolution, and launch-fragment assembly.
 
 Real audio devices are their own ``pipewiresrc`` nodes (NOT the ScreenCast portal).
-Pure helpers (``resolve_audio_devices``, ``build_audio_fragment``) are unit-tested;
-``discover_audio_devices`` talks to live hardware and is probe-verified.
+Pure helpers (``resolve_audio_devices``, ``build_audio_fragment``, ``_parse_pactl_sources``)
+are unit-tested; ``discover_audio_devices`` shells out to ``pactl`` and is probe-verified.
+
+We enumerate via ``pactl`` rather than ``Gst.DeviceMonitor`` because the latter does not
+surface sink *monitor* sources (desktop audio) on PipeWire — only hardware inputs — which
+would make desktop-audio capture impossible. ``pactl list sources`` lists both, and the
+node names it reports are exactly what ``pipewiresrc target-object=`` accepts.
 """
 
 from __future__ import annotations
@@ -11,10 +16,6 @@ import logging
 import subprocess
 from dataclasses import dataclass
 from typing import Protocol
-
-from tea_clipper.gst_init import ensure_gst  # registers gi version first
-
-from gi.repository import Gst
 
 log = logging.getLogger("tea_clipper")
 
@@ -84,57 +85,57 @@ def resolve_audio_devices(settings: _SettingsLike, available: list[AudioDevice])
     return resolved
 
 
-def _default_node_names() -> tuple[str | None, str | None]:
-    """(default_sink_monitor_node, default_source_node) via pactl; (None, None) on failure."""
+def _run_pactl(args: list[str]) -> str | None:
+    """Run ``pactl <args>`` and return stdout; ``None`` if pactl is missing/fails."""
+    try:
+        result = subprocess.run(
+            ["pactl", *args],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout
 
-    def query(kind: str) -> str | None:
-        try:
-            result = subprocess.run(
-                ["pactl", "get-default-" + kind],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=True,
+
+def _parse_pactl_sources(
+    list_output: str, default_sink: str | None, default_source: str | None
+) -> list[AudioDevice]:
+    """Parse ``pactl list sources`` into AudioDevices. Pure; unit-tested.
+
+    Each source block contains a ``Name:`` (the node name, what ``pipewiresrc
+    target-object=`` wants) followed by a ``Description:`` (human-readable). A sink's
+    monitor is named ``<sink>.monitor``, so the default sink's monitor is the default
+    desktop-audio device.
+    """
+    default_monitor = f"{default_sink}.monitor" if default_sink else None
+    devices: list[AudioDevice] = []
+    name: str | None = None
+    for raw in list_output.splitlines():
+        line = raw.strip()
+        if line.startswith("Name:"):
+            name = line[len("Name:"):].strip()
+        elif line.startswith("Description:") and name is not None:
+            description = line[len("Description:"):].strip()
+            devices.append(
+                AudioDevice(
+                    node_name=name,
+                    display_name=description or name,
+                    is_monitor=name.endswith(".monitor"),
+                    is_default=name in (default_monitor, default_source),
+                )
             )
-        except (OSError, subprocess.SubprocessError):
-            return None
-        name = result.stdout.strip()
-        return name or None
-
-    sink = query("sink")
-    source = query("source")
-    monitor = f"{sink}.monitor" if sink else None
-    return monitor, source
+            name = None
+    return devices
 
 
 def discover_audio_devices() -> list[AudioDevice]:
-    """Enumerate capturable audio nodes via GStreamer's PipeWire device provider."""
-    ensure_gst()
-    monitor = Gst.DeviceMonitor.new()
-    monitor.add_filter("Audio/Source", None)
-    monitor.start()
-    try:
-        gst_devices = monitor.get_devices()
-    finally:
-        monitor.stop()
-
-    default_monitor, default_source = _default_node_names()
-
-    devices: list[AudioDevice] = []
-    for dev in gst_devices:
-        props = dev.get_properties()
-        node_name = props.get_string("node.name") if props is not None else None
-        if not node_name:
-            continue
-        media_class = (props.get_string("media.class") or "") if props is not None else ""
-        is_monitor = node_name.endswith(".monitor") or "Monitor" in media_class
-        is_default = node_name in (default_monitor, default_source)
-        devices.append(
-            AudioDevice(
-                node_name=node_name,
-                display_name=dev.get_display_name() or node_name,
-                is_monitor=is_monitor,
-                is_default=is_default,
-            )
-        )
-    return devices
+    """Enumerate capturable audio nodes (mics + sink monitors) via ``pactl``."""
+    list_output = _run_pactl(["list", "sources"])
+    if not list_output:
+        return []
+    default_sink = (_run_pactl(["get-default-sink"]) or "").strip() or None
+    default_source = (_run_pactl(["get-default-source"]) or "").strip() or None
+    return _parse_pactl_sources(list_output, default_sink, default_source)

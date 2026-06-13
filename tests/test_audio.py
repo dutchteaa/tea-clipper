@@ -1,5 +1,6 @@
 from tea_clipper.audio import (
     AudioDevice,
+    _parse_pactl_sources,
     build_audio_fragment,
     resolve_audio_devices,
 )
@@ -81,3 +82,52 @@ def test_missing_default_token_is_skipped():
     ]
     out = resolve_audio_devices(_S(["@mic@", "@desktop@"]), no_default_mic)
     assert out == ["sink.a.monitor"]
+
+
+# --- _parse_pactl_sources (the discovery parser) -------------------------------
+
+# Representative `pactl list sources` output: a monitor and a mic, with the kind of
+# interleaved fields pactl actually emits between Name/Description (must be ignored).
+_PACTL_SOURCES = """\
+Source #52
+\tState: RUNNING
+\tName: alsa_output.usb-Speakers.analog-stereo.monitor
+\tDescription: Monitor of USB Speakers Analog Stereo
+\tDriver: PipeWire
+Source #53
+\tState: SUSPENDED
+\tName: alsa_input.usb-Mic.analog-stereo
+\tDescription: USB Mic Analog Stereo
+\tDriver: PipeWire
+"""
+
+
+def test_parse_pactl_sources_reads_name_and_description():
+    out = _parse_pactl_sources(_PACTL_SOURCES, default_sink=None, default_source=None)
+    assert [d.node_name for d in out] == [
+        "alsa_output.usb-Speakers.analog-stereo.monitor",
+        "alsa_input.usb-Mic.analog-stereo",
+    ]
+    assert out[0].display_name == "Monitor of USB Speakers Analog Stereo"
+    assert out[1].display_name == "USB Mic Analog Stereo"
+
+
+def test_parse_pactl_sources_flags_monitors():
+    out = _parse_pactl_sources(_PACTL_SOURCES, default_sink=None, default_source=None)
+    assert out[0].is_monitor is True   # the .monitor source
+    assert out[1].is_monitor is False  # the input mic
+
+
+def test_parse_pactl_sources_flags_defaults():
+    # default sink → its <sink>.monitor is the default desktop device; default source → the mic
+    out = _parse_pactl_sources(
+        _PACTL_SOURCES,
+        default_sink="alsa_output.usb-Speakers.analog-stereo",
+        default_source="alsa_input.usb-Mic.analog-stereo",
+    )
+    assert out[0].is_default is True
+    assert out[1].is_default is True
+
+
+def test_parse_pactl_sources_empty_output():
+    assert _parse_pactl_sources("", default_sink=None, default_source=None) == []
