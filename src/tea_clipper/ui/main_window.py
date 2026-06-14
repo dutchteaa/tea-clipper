@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from tea_clipper.ui.engine_host import EngineHost
 from tea_clipper.ui.settings_form import SettingsForm
+from tea_clipper.ui.shortcuts import open_shortcuts_editor
 
 _STATE_COLORS = {
     "Idle": "#888", "Starting": "#e0a800", "Recording": "#2e9e2e",
@@ -52,11 +53,14 @@ class MainWindow(QMainWindow):
         folder_btn.clicked.connect(self._on_open_folder)
         repick_btn = QPushButton("Re-pick source")
         repick_btn.clicked.connect(self._on_repick)
+        shortcuts_btn = QPushButton("Configure shortcuts…")
+        shortcuts_btn.clicked.connect(self._on_shortcuts)
 
         buttons = QHBoxLayout()
         buttons.addWidget(apply_btn)
         buttons.addWidget(folder_btn)
         buttons.addWidget(repick_btn)
+        buttons.addWidget(shortcuts_btn)
 
         layout = QVBoxLayout()
         layout.addWidget(self._status)
@@ -105,6 +109,14 @@ class MainWindow(QMainWindow):
         if confirm != QMessageBox.StandardButton.Yes:
             return
         self._host.repick_source()
+
+    def _on_shortcuts(self) -> None:
+        if not open_shortcuts_editor():
+            QMessageBox.information(
+                self, "Configure shortcuts",
+                "Couldn't find a system settings editor. Open KDE System Settings → "
+                "Shortcuts to rebind tea-clipper (Save clip / Toggle recording).",
+            )
 
     def _on_open_folder(self) -> None:
         out = self._form.collect().output_dir

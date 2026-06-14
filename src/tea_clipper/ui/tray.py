@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-import shutil
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
@@ -14,16 +11,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from tea_clipper.ui.engine_host import EngineHost
 from tea_clipper.ui.icons import app_icon
 from tea_clipper.ui.main_window import MainWindow
-
-log = logging.getLogger("tea_clipper")
-
-# Global shortcuts are owned by the compositor (we only suggest defaults), so "change
-# keybinds" means opening KDE's own shortcut editor. Tried in order; first found wins.
-_SHORTCUT_EDITORS = (
-    ["systemsettings", "kcm_keys"],
-    ["kcmshell6", "kcm_keys"],
-    ["systemsettings5", "kcm_keys"],
-)
+from tea_clipper.ui.shortcuts import open_shortcuts_editor
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -67,18 +55,12 @@ class TrayIcon(QSystemTrayIcon):
         QDesktopServices.openUrl(QUrl.fromLocalFile(out))
 
     def _open_shortcuts(self) -> None:
-        for cmd in _SHORTCUT_EDITORS:
-            if shutil.which(cmd[0]):
-                try:
-                    subprocess.Popen(cmd)
-                    return
-                except OSError:
-                    log.exception("failed to launch %s", cmd[0])
-        self.showMessage(
-            "Configure shortcuts",
-            "Open KDE System Settings → Shortcuts to rebind tea-clipper "
-            "(Save clip / Toggle recording).",
-        )
+        if not open_shortcuts_editor():
+            self.showMessage(
+                "Configure shortcuts",
+                "Open KDE System Settings → Shortcuts to rebind tea-clipper "
+                "(Save clip / Toggle recording).",
+            )
 
     def _on_state(self, state: str, detail: str) -> None:
         tip = f"tea-clipper — {state}"
