@@ -23,6 +23,11 @@ single-purpose:
 | `src/tea_clipper/pipeline.py` | `CapturePipeline`: builds/owns the GStreamer pipeline, rolling segment buffer, segment-finalized pub/sub, `force_split()` |
 | `src/tea_clipper/replay_buffer.py` | `ReplayBuffer`: track finalized segments, `save_last(seconds, out, pipeline)`, lossless `ffmpeg -c copy` stitch |
 | `src/tea_clipper/manual_recorder.py` | `ManualRecorder`: collect segments while active, stitch a full take on `stop()` |
+| `src/tea_clipper/portal.py` | `PortalManager` + `ScreenCastPortal`: ScreenCast portal negotiation, restore-token persistence, `pipewiresrc` video fragment (fps-limited) |
+| `src/tea_clipper/hotkeys.py` | `HotkeyService` + `GlobalShortcutsPortal`: register global shortcuts, dispatch activations to listeners |
+| `src/tea_clipper/audio.py` | audio device discovery (`pactl`), `@desktop@`/`@mic@` resolution, `audiomixer` launch-fragment builder |
+| `src/tea_clipper/controller.py` | `Controller` + `build_controller`: wire capture + buffer + recorder + hotkeys into a runnable daemon, route hotkeys |
+| `src/tea_clipper/ui/` | PySide6 tray + settings/status app: `EngineHost` (engine on a GLib worker thread), `SettingsForm`, `AudioPicker`, `MainWindow`, `TrayIcon`, `app` |
 
 The architecture (one shared pipeline, `tee` to a rolling replay buffer + a manual sink)
 is documented in [`CLAUDE.md`](CLAUDE.md). Specs and implementation plans live under
@@ -65,6 +70,12 @@ missing. They run **headlessly** by swapping the real screen capture (`pipewires
 GStreamer test sources (`videotestsrc`/`audiotestsrc`), so the full
 capture → buffer → stitch path is exercised without a real screencast.
 
+Qt UI tests instantiate widgets under `QT_QPA_PLATFORM=offscreen` (set automatically by the
+`qapp` conftest fixture), so they need no display. Code that must touch a live portal, D-Bus,
+real devices, or a visible tray is **not** unit-tested — it's verified by the `*_probe.py`
+scripts and by running `python -m tea_clipper.ui` on hardware. Keep that split: unit-test the
+pure/orchestration logic with fakes, probe the rest.
+
 ## How we work
 
 - **Test-Driven Development.** Write a failing test first, watch it fail, then write the
@@ -83,8 +94,7 @@ capture → buffer → stitch path is exercised without a real screencast.
 
 ## Submitting changes
 
-1. Branch off the current working branch (engine work lives on `engine-core` until it's
-   merged to the default branch). Use a short descriptive branch name.
+1. Branch off `main` (all milestones are merged there now). Use a short descriptive branch name.
 2. Make your change with tests; ensure `.venv/bin/pytest -m "engine or not engine"` is
    fully green.
 3. Push and open a pull request describing **what** changed and **why**. Link any related

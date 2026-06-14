@@ -265,24 +265,49 @@ Spec: `docs/superpowers/specs/2026-06-14-ui-design.md` · Plan:
   Open clips folder · Quit); tooltip reflects state.
 - ✅ `ui/app.py` + `ui/__main__.py` — **`python -m tea_clipper.ui`** wires it all and auto-starts
   capture. The headless daemon (`python -m tea_clipper`) is **kept** untouched.
-- Suite is **77 passing** (`.venv/bin/pytest`). PySide6 added to `pyproject` (`dev`/`gui` extras);
+- ✅ `ui/icons.py` + `ui/shortcuts.py` — `app_icon()` resolves a freedesktop theme icon
+  (`media-record` → fallbacks) so KDE shows a real tray/window icon (app metadata set in
+  `app.py`); `open_shortcuts_editor()` launches KDE's shortcut editor (`systemsettings kcm_keys`),
+  shared by the tray menu and a window button. Global shortcuts are compositor-owned (we only
+  suggest defaults), so "change keybinds" = open the system editor, not an in-app key field.
+- Post-MVP refinements on this branch: **Save clip + checkable Record toggle** buttons in the
+  window; **Configure shortcuts…** in both the tray menu and the window.
+- Suite is **78 passing** (`.venv/bin/pytest`). PySide6 added to `pyproject` (`dev`/`gui` extras);
   unit tests run with `QT_QPA_PLATFORM=offscreen` via a `qapp` conftest fixture.
-- ⏳ **Hardware probe pending:** offscreen wiring smoke-test passes (full app graph builds, signals
-  propagate to the tray tooltip), but the interactive run (real tray, screen picker, live
-  clip-save, Apply/Re-pick) needs a human at the KDE/Wayland session: `python -m tea_clipper.ui`.
+- ✅ **Hardware-verified** on KDE/Wayland (AMD RDNA3): `python -m tea_clipper.ui` launches the
+  tray + window, auto-starts capture (restore token reused, no picker), and the rolling buffer
+  fills continuously; a hotkey-triggered save produced a valid 14s H.264+Opus clip and the
+  window's "Last clip" updated. Tray icon confirmed visible.
+
+## Status — fps fix (capture framerate)
+
+`settings.fps` previously fed **only** the encoder keyframe interval (`key-int-max`), never the
+real capture rate — `pipewiresrc` delivered at the monitor's native refresh (165 Hz on the
+target), so clips were 165 fps regardless of the setting. Fixed on the `ui` branch:
+`portal.build_video_fragment(fd, node_id, fps)` now inserts `videorate ! video/x-raw,framerate=
+<fps>/1`, driven by `settings.fps`. **Hardware-verified:** with `fps=60`, fresh buffer segments
+report `r_frame_rate=60/1` (was 165). Unit-tested in `tests/test_portal.py` (pure fragment +
+`PortalManager.open` passes `settings.fps`). The test source's hardcoded `framerate=30/1` is
+untouched.
 
 ## NEXT SESSION — handoff
 
-**State:** all six milestones are implemented. The five engine milestones (engine-core,
-PortalManager, HotkeyService, Controller, audio) are **merged to `main`**. The **PySide6 UI** is
-complete on the `ui` branch (stacked on `main`), suite **77 passing** (`.venv/bin/pytest`), but
-its interactive hardware probe is **not yet done**.
+**State:** all six milestones are **complete and hardware-verified**. The five engine milestones
+(engine-core, PortalManager, HotkeyService, Controller, audio) plus the **PySide6 UI** (incl. the
+fps fix + UI refinements above) are **merged to `main`**. Suite is **78 passing**
+(`.venv/bin/pytest`). The product is feature-complete: `python -m tea_clipper.ui` runs the tray +
+settings/status app, and `python -m tea_clipper` runs the headless daemon — both record real
+stereo desktop+mic clips at the configured fps.
 
-**Immediate next step:** run `python -m tea_clipper.ui` on the KDE/Wayland target and walk the
-Task 9 checklist in `docs/superpowers/plans/2026-06-14-ui.md` (tray appears, capture auto-starts,
-Save/Toggle from tray write files + update "Last clip", Apply shows the warning then restarts,
-Re-pick re-prompts the picker, Open folder works, close hides to tray, Quit exits). Then open a
-PR for the `ui` branch → `main`.
+**No milestone is outstanding.** Natural next steps if work continues: a `.desktop` file +
+autostart entry, packaging (AUR/Flatpak), and the small polish items deferred below.
+
+**Deferred polish (optional, YAGNI):**
+- Window Record button doesn't sync when recording is toggled via hotkey/tray (no
+  `recording_changed` signal yet).
+- "Configure shortcuts…" launches `systemsettings`; could instead call the GlobalShortcuts
+  portal's `ConfigureShortcuts` D-Bus method through `HotkeyService`.
+- In-app log viewer; multi-monitor source picker; per-setting live apply (no restart).
 
 **Gotchas worth remembering:**
 - `pipewiresrc` has cold-start latency — a clip saved within the first few seconds of launch is
