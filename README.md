@@ -42,47 +42,59 @@ the standard desktop portal, so it works without root or kernel hacks.
   - **`gst-plugin-pipewire`** — `pipewiresrc` (portal screen capture)
   - **`gst-plugin-va`** — VAAPI hardware encoders (`vah264enc` / `vah265enc` / `vaav1enc`)
   - **`gst-plugins-ugly`** — `x264enc` (software encode fallback)
-- PySide6 (Qt UI — used by the forthcoming settings UI; not needed for the engine)
+- PySide6 (Qt 6 — the tray + settings/status UI; not needed for the headless engine)
 - ffmpeg (used to losslessly stitch saved clips)
+- `pactl` (PipeWire's PulseAudio-compat CLI — used to enumerate audio devices; degrades
+  gracefully if absent)
 
 On Arch/CachyOS, the plugin sets above map to:
 `sudo pacman -S gst-plugins-good gst-plugins-base gst-plugin-pipewire gst-plugin-va gst-plugins-ugly ffmpeg`
 
 ## Status
 
-🚧 **Working MVP — runnable today; audio + UI remain.**
+✅ **Feature-complete — runnable today, verified end-to-end on real hardware** (KDE/Wayland,
+AMD RDNA3).
 
-The full capture daemon is built, unit-tested, and verified end-to-end on real hardware
-(KDE/Wayland, AMD RDNA3). `python -m tea_clipper` runs a working clipper now: it captures
-your screen, keeps the rolling buffer full, and saves clips on a global hotkey.
+tea-clipper captures your screen + audio, keeps a rolling buffer, and saves clips on a global
+hotkey — driven either by the system-tray app (`python -m tea_clipper.ui`) or the headless
+daemon (`python -m tea_clipper`).
 
 - ✅ Settings (TOML), encoder probing/selection (VAAPI with software fallback)
 - ✅ Rolling, self-pruning segment buffer + per-segment finalize events
 - ✅ Lossless clip stitching (`ffmpeg -c copy`)
 - ✅ Save-last-N-seconds clips and manual full-take recording
 - ✅ Real screen capture via `xdg-desktop-portal` ScreenCast (`pipewiresrc`, persistent
-  restore token) — hardware-verified producing real 2560×1440 H.264 clips
-- ✅ Global hotkeys via the GlobalShortcuts portal (`save_clip` / `toggle_record`) —
-  hardware-verified firing on KDE
-- ✅ **Controller / runnable daemon** (`python -m tea_clipper`) — wires capture + buffer +
-  recorder + hotkeys into the headless MVP, hardware-verified writing clips on key press
-- 🔜 Real desktop + microphone audio mixing (capture is currently video-only)
-- 🔜 PySide6 settings/status UI
+  restore token, configurable fps) — hardware-verified producing real 2560×1440 clips
+- ✅ Global hotkeys via the GlobalShortcuts portal (`save_clip` / `toggle_record`)
+- ✅ Desktop + microphone audio, mixed to stereo Opus — hardware-verified
+- ✅ Controller / headless daemon (`python -m tea_clipper`)
+- ✅ PySide6 system-tray + settings/status UI (`python -m tea_clipper.ui`)
 
 The engine is also proven **headlessly** using GStreamer test sources, so the whole
 capture → buffer → stitch path is exercised in CI without a real screencast.
 
 ## Running
 
+The full app — system tray + settings/status window:
+
+```bash
+python -m tea_clipper.ui
+```
+
+Closing the window hides to the tray (capture keeps running); quit from the tray menu. The
+window lets you set clip length, codec, bitrate, fps, audio sources, and output folder, save a
+clip or toggle recording, re-pick the source, and open the shortcut editor.
+
+Or the headless daemon — no UI, same engine:
+
 ```bash
 python -m tea_clipper
 ```
 
-Opens a monitor picker the first time (the choice is remembered after), then runs in the
-background. Press the global hotkeys — by default `Ctrl+Alt+C` saves the last clip and
-`Ctrl+Alt+R` toggles manual recording (rebind them in **System Settings → Shortcuts**).
-Clips land in `~/Videos/tea-clipper`. `Ctrl-C` to quit. *(Audio is not captured yet — clips
-are video-only until the audio milestone lands.)*
+Either way, a monitor picker appears the first time (the choice is remembered after), then
+capture runs in the background. Press the global hotkeys — by default `Ctrl+Alt+C` saves the
+last clip and `Ctrl+Alt+R` toggles manual recording (rebind them in **System Settings →
+Shortcuts**, or via the UI's *Configure shortcuts…* button). Clips land in `~/Videos/tea-clipper`.
 
 ## Development
 

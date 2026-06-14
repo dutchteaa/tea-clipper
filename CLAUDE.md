@@ -233,28 +233,81 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
   `python -m tea_clipper` daemon was also confirmed writing video+audio buffer segments
   (H.264 2560×1440 + Opus), and a hotkey-saved clip measured mean −31 dB / max −6 dB of real
   stereo signal.
-- 📌 **Open PR:** https://github.com/dutchteaa/tea-clipper/pull/5 (`audio` → `main`).
+- ✅ **Merged:** PR #5 (`audio` → `main`, commit `e3aec69`).
+
+## Status — PySide6 UI (tray + window)
+
+Spec: `docs/superpowers/specs/2026-06-14-ui-design.md` · Plan:
+`docs/superpowers/plans/2026-06-14-ui.md`. Implemented (TDD) on the `ui` branch (stacked on
+`main`). Medal-style: capture runs in the background, the window is a view into it.
+
+- **Threading model (the key decision):** Qt owns the main thread (`QApplication.exec()`); a
+  daemon worker thread owns the engine's `GLib.MainLoop` + `Controller`. `build_controller()`
+  blocks on portal negotiation, so it *must* run off the UI thread. UI→engine actions marshal
+  via `GLib.idle_add`; engine→UI updates come back as thread-safe Qt signals.
+- ✅ `ui/engine_host.py` — `EngineHost(QObject)`: the **only** place threading lives. Builds/
+  starts/stops the `Controller` on the worker thread, persists the restore token, re-emits
+  engine events as Qt signals `state_changed(state, detail)` / `clip_saved(path)`. State
+  machine: `Idle → Starting → Recording`, `Recording → Restarting → Recording` (Apply/Re-pick),
+  any → `Error(detail)`. `apply_settings`/`repick_source` restart capture; `save_clip`/
+  `toggle_record` dispatch to the controller. **Unit-tested** with a fake builder/controller
+  (`tests/test_engine_host.py`); the worker thread + real loop is probe-verified.
+- ✅ `ui/settings_form.py` — `SettingsForm(QWidget)`: pure `Settings` ↔ widget mapping
+  (clip length, codec combo, hardware, bitrate, fps, output dir, audio picker). `load`/`collect`
+  round-trip preserves fields it doesn't edit (`segment_seconds`, `buffer_dir`,
+  `source_restore_token`). **Unit-tested offscreen** (`tests/test_settings_form.py`).
+- ✅ `ui/audio_picker.py` — `AudioPicker(QWidget)`: checkable grouped list (Default desktop/mic
+  tokens + concrete sinks/mics from `discover_audio_devices()`) → `settings.audio_devices`
+  (tokens or `node_name`s; empty = video-only). **Unit-tested** (`tests/test_audio_picker.py`).
+- ✅ `ui/main_window.py` — status dot + form + **Apply** (confirmation dialog warns capture
+  restarts) / **Open clips folder** / **Re-pick source**; window close hides to tray.
+- ✅ `ui/tray.py` — `QSystemTrayIcon` menu (Open settings · Save clip now · Toggle recording ·
+  Open clips folder · Quit); tooltip reflects state.
+- ✅ `ui/app.py` + `ui/__main__.py` — **`python -m tea_clipper.ui`** wires it all and auto-starts
+  capture. The headless daemon (`python -m tea_clipper`) is **kept** untouched.
+- ✅ `ui/icons.py` + `ui/shortcuts.py` — `app_icon()` resolves a freedesktop theme icon
+  (`media-record` → fallbacks) so KDE shows a real tray/window icon (app metadata set in
+  `app.py`); `open_shortcuts_editor()` launches KDE's shortcut editor (`systemsettings kcm_keys`),
+  shared by the tray menu and a window button. Global shortcuts are compositor-owned (we only
+  suggest defaults), so "change keybinds" = open the system editor, not an in-app key field.
+- Post-MVP refinements on this branch: **Save clip + checkable Record toggle** buttons in the
+  window; **Configure shortcuts…** in both the tray menu and the window.
+- Suite is **78 passing** (`.venv/bin/pytest`). PySide6 added to `pyproject` (`dev`/`gui` extras);
+  unit tests run with `QT_QPA_PLATFORM=offscreen` via a `qapp` conftest fixture.
+- ✅ **Hardware-verified** on KDE/Wayland (AMD RDNA3): `python -m tea_clipper.ui` launches the
+  tray + window, auto-starts capture (restore token reused, no picker), and the rolling buffer
+  fills continuously; a hotkey-triggered save produced a valid 14s H.264+Opus clip and the
+  window's "Last clip" updated. Tray icon confirmed visible.
+
+## Status — fps fix (capture framerate)
+
+`settings.fps` previously fed **only** the encoder keyframe interval (`key-int-max`), never the
+real capture rate — `pipewiresrc` delivered at the monitor's native refresh (165 Hz on the
+target), so clips were 165 fps regardless of the setting. Fixed on the `ui` branch:
+`portal.build_video_fragment(fd, node_id, fps)` now inserts `videorate ! video/x-raw,framerate=
+<fps>/1`, driven by `settings.fps`. **Hardware-verified:** with `fps=60`, fresh buffer segments
+report `r_frame_rate=60/1` (was 165). Unit-tested in `tests/test_portal.py` (pure fragment +
+`PortalManager.open` passes `settings.fps`). The test source's hardcoded `framerate=30/1` is
+untouched.
 
 ## NEXT SESSION — handoff
 
-**State:** all five engine milestones are done and hardware-verified — the four core ones
-(engine-core, PortalManager, HotkeyService, Controller) are merged to `main`, and **audio** is
-complete on the `audio` branch with an **open PR → `main`** (see below). Suite is **60 passing**
-(`.venv/bin/pytest -m "engine or not engine"`). `python -m tea_clipper` records clips with real
-stereo desktop+mic audio today; fully end-to-end verified (a hotkey-saved clip measured
-mean −31 dB / max −6 dB of genuine signal).
+**State:** all six milestones are **complete and hardware-verified**. The five engine milestones
+(engine-core, PortalManager, HotkeyService, Controller, audio) plus the **PySide6 UI** (incl. the
+fps fix + UI refinements above) are **merged to `main`**. Suite is **78 passing**
+(`.venv/bin/pytest`). The product is feature-complete: `python -m tea_clipper.ui` runs the tray +
+settings/status app, and `python -m tea_clipper` runs the headless daemon — both record real
+stereo desktop+mic clips at the configured fps.
 
-**Immediate next step:** review + merge the audio PR
-(https://github.com/dutchteaa/tea-clipper/pull/5), then start the final milestone.
+**No milestone is outstanding.** Natural next steps if work continues: a `.desktop` file +
+autostart entry, packaging (AUR/Flatpak), and the small polish items deferred below.
 
-**One milestone remains:**
-
-1. **PySide6 settings/status UI** (last). A small Qt form over `Settings` (clip length, codec,
-   bitrate, fps, **`audio_devices` picker** driven by `audio.discover_audio_devices()`, output
-   dir) + a status indicator + open-folder / re-pick-source buttons, driving a `Controller`.
-   KDE-native fit. Note: `AudioDevice` already carries `display_name` + `is_monitor` (desktop) +
-   `is_default` flags, so the picker can render a friendly grouped list and write `node_name`s
-   (or `@desktop@`/`@mic@`) into `audio_devices`.
+**Deferred polish (optional, YAGNI):**
+- Window Record button doesn't sync when recording is toggled via hotkey/tray (no
+  `recording_changed` signal yet).
+- "Configure shortcuts…" launches `systemsettings`; could instead call the GlobalShortcuts
+  portal's `ConfigureShortcuts` D-Bus method through `HotkeyService`.
+- In-app log viewer; multi-monitor source picker; per-setting live apply (no restart).
 
 **Gotchas worth remembering:**
 - `pipewiresrc` has cold-start latency — a clip saved within the first few seconds of launch is
@@ -265,5 +318,8 @@ mean −31 dB / max −6 dB of genuine signal).
 - Audio default-device detection shells out to `pactl` (PipeWire's PulseAudio-compat CLI) — a
   runtime dep in the same spirit as the `ffmpeg` subprocess and the `gst-plugins-good` requirement.
   It degrades gracefully if absent (the `@desktop@`/`@mic@` tokens just resolve to nothing).
+- UI threading: never call `build_controller()` / `EngineHost.start()` on the Qt main thread — it
+  blocks on portal negotiation. The engine lives on the worker thread; touch Qt widgets only from
+  the main thread and the engine only via `EngineHost` (which marshals both ways).
 - Git push auth on this machine goes through KWallet (see agent memory `git-auth-kwallet`); first
   push for a new token must be interactive.

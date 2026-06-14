@@ -43,8 +43,11 @@ def test_parse_start_results_no_streams_raises():
 
 
 def test_build_video_fragment():
-    frag = build_video_fragment(27, 42)
-    assert frag == "pipewiresrc fd=27 path=42 ! videoconvert ! queue name=venc_in"
+    frag = build_video_fragment(27, 42, fps=60)
+    assert frag == (
+        "pipewiresrc fd=27 path=42 ! videoconvert ! videorate ! "
+        "video/x-raw,framerate=60/1 ! queue name=venc_in"
+    )
 
 
 import os
@@ -97,7 +100,10 @@ def test_open_returns_fragment_and_saves_new_token():
 
     frag = mgr.open()
 
-    assert frag == "pipewiresrc fd=27 path=42 ! videoconvert ! queue name=venc_in"
+    assert frag == (
+        "pipewiresrc fd=27 path=42 ! videoconvert ! videorate ! "
+        "video/x-raw,framerate=60/1 ! queue name=venc_in"
+    )
     assert settings.source_restore_token == "newtok"
     assert mgr.is_open
     opts = _select_opts(fake)
@@ -116,6 +122,16 @@ def test_open_reuses_existing_token_and_keeps_it_when_none_returned():
     assert "path=7" in frag
     assert _select_opts(fake)["restore_token"] == "saved-tok"
     assert settings.source_restore_token == "saved-tok"  # unchanged
+
+
+def test_open_applies_configured_fps_to_fragment():
+    settings = Settings(source_restore_token="t", fps=30)
+    fake = FakePortal({"streams": [(7, {})]}, fd=31)
+    mgr = PortalManager(settings, portal=fake)
+
+    frag = mgr.open()
+
+    assert "videorate ! video/x-raw,framerate=30/1" in frag
 
 
 def test_open_cancelled_propagates_and_closes_session():

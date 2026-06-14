@@ -64,9 +64,17 @@ def parse_start_results(results: dict) -> tuple[int, str]:
     return node_id, results.get("restore_token", "")
 
 
-def build_video_fragment(fd: int, node_id: int) -> str:
-    """The pipewiresrc launch fragment CapturePipeline consumes as its video source."""
-    return f"pipewiresrc fd={fd} path={node_id} ! videoconvert ! queue name=venc_in"
+def build_video_fragment(fd: int, node_id: int, fps: int) -> str:
+    """The pipewiresrc launch fragment CapturePipeline consumes as its video source.
+
+    ``pipewiresrc`` delivers frames at the display's native refresh rate; ``videorate``
+    drops/duplicates to the configured ``fps`` so the encoded clip honors the setting
+    (the encoder otherwise just encodes whatever the monitor produces).
+    """
+    return (
+        f"pipewiresrc fd={fd} path={node_id} ! videoconvert ! videorate ! "
+        f"video/x-raw,framerate={fps}/1 ! queue name=venc_in"
+    )
 
 
 class PortalManager:
@@ -109,7 +117,7 @@ class PortalManager:
             raise
         self._session = session
         self._fd = fd
-        return build_video_fragment(fd, node_id)
+        return build_video_fragment(fd, node_id, self._settings.fps)
 
     def close(self) -> None:
         if self._fd is not None:
