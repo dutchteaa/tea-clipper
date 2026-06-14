@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication
 
 from tea_clipper.settings import Settings
 from tea_clipper.ui.engine_host import EngineHost
+from tea_clipper.ui.icons import app_icon
 from tea_clipper.ui.main_window import MainWindow
 from tea_clipper.ui.tray import TrayIcon
 
@@ -20,6 +21,10 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.load(config)
 
     app = QApplication(argv if argv is not None else sys.argv)
+    app.setApplicationName("tea-clipper")
+    app.setApplicationDisplayName("tea-clipper")
+    app.setDesktopFileName("tea-clipper")  # ties window/tray to a stable app identity
+    app.setWindowIcon(app_icon())
     app.setQuitOnLastWindowClosed(False)  # closing the window hides to tray
 
     host = EngineHost(settings, config)

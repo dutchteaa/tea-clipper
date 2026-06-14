@@ -36,6 +36,16 @@ class MainWindow(QMainWindow):
         self._form = SettingsForm()
         self._form.load(settings)
 
+        save_btn = QPushButton("Save clip")
+        save_btn.clicked.connect(host.save_clip)
+        self._record_btn = QPushButton("● Record")
+        self._record_btn.setCheckable(True)
+        self._record_btn.toggled.connect(self._on_record_toggled)
+
+        capture = QHBoxLayout()
+        capture.addWidget(save_btn)
+        capture.addWidget(self._record_btn)
+
         apply_btn = QPushButton("Apply")
         apply_btn.clicked.connect(self._on_apply)
         folder_btn = QPushButton("Open clips folder")
@@ -51,6 +61,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addWidget(self._status)
         layout.addWidget(self._last_clip)
+        layout.addLayout(capture)
         layout.addWidget(self._form)
         layout.addLayout(buttons)
 
@@ -71,6 +82,10 @@ class MainWindow(QMainWindow):
 
     def _on_clip_saved(self, path: str) -> None:
         self._last_clip.setText(f"Last clip: {path}")
+
+    def _on_record_toggled(self, recording: bool) -> None:
+        self._record_btn.setText("■ Stop recording" if recording else "● Record")
+        self._host.toggle_record()
 
     def _on_apply(self) -> None:
         confirm = QMessageBox.question(
