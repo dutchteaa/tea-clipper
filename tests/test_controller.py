@@ -134,6 +134,49 @@ def test_save_clip_failure_is_caught(tmp_path):
     assert ctl.last_clip is None
 
 
+def test_clip_saved_cb_fires_on_save(tmp_path):
+    saved = []
+    ctl, _pipeline, _hotkeys = _controller(tmp_path)
+    ctl._clip_saved_cb = saved.append   # set directly; constructor path covered below
+    ctl.start()
+    ctl.save_clip()
+    assert saved == [str(ctl.last_clip)]
+
+
+def test_clip_saved_cb_passed_via_constructor(tmp_path):
+    saved = []
+    settings = Settings(output_dir=str(tmp_path))
+    ctl = Controller(
+        settings, FakePipeline(), FakeReplay(), FakeRecorder(), FakeHotkeys(),
+        clip_saved_cb=saved.append,
+    )
+    ctl.start()
+    ctl.save_clip()
+    assert len(saved) == 1
+
+
+def test_clip_saved_cb_fires_on_record_stop(tmp_path):
+    saved = []
+    recorder = FakeRecorder()
+    ctl, _pipeline, _hotkeys = _controller(tmp_path, recorder=recorder)
+    ctl._clip_saved_cb = saved.append
+    ctl.start()
+    ctl.toggle_record()   # start: no clip yet
+    assert saved == []
+    ctl.toggle_record()   # stop: clip finalized
+    assert len(saved) == 1
+
+
+def test_clip_saved_cb_not_called_on_failure(tmp_path):
+    saved = []
+    replay = FakeReplay(raises=True)
+    ctl, _pipeline, _hotkeys = _controller(tmp_path, replay=replay)
+    ctl._clip_saved_cb = saved.append
+    ctl.start()
+    ctl.save_clip()       # save_last raises
+    assert saved == []
+
+
 def test_stop_tears_down(tmp_path):
     portal = FakePortal()
     settings = Settings(output_dir=str(tmp_path))

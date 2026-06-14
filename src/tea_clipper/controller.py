@@ -26,7 +26,8 @@ class Controller:
     """
 
     def __init__(
-        self, settings, pipeline, replay_buffer, manual_recorder, hotkey_service, portal=None
+        self, settings, pipeline, replay_buffer, manual_recorder, hotkey_service,
+        portal=None, clip_saved_cb=None,
     ) -> None:
         self._settings = settings
         self._pipeline = pipeline
@@ -34,6 +35,7 @@ class Controller:
         self._recorder = manual_recorder
         self._hotkeys = hotkey_service
         self._portal = portal
+        self._clip_saved_cb = clip_saved_cb
         self._loop = None
         self.last_clip = None
 
@@ -42,21 +44,30 @@ class Controller:
         out_dir.mkdir(parents=True, exist_ok=True)
         return out_dir / f"{prefix}_{datetime.now():%Y%m%d_%H%M%S}.mkv"
 
-    def _on_save_clip(self) -> None:
+    def _notify_saved(self) -> None:
+        if self._clip_saved_cb is not None and self.last_clip is not None:
+            try:
+                self._clip_saved_cb(str(self.last_clip))
+            except Exception:
+                log.exception("clip_saved_cb raised")
+
+    def save_clip(self) -> None:
         try:
             out = self._output_path("clip")
             self.last_clip = self._replay.save_last(
                 self._settings.clip_length_seconds, out, self._pipeline
             )
             log.info("saved clip: %s", self.last_clip)
+            self._notify_saved()
         except Exception:
             log.exception("failed to save clip")
 
-    def _on_toggle_record(self) -> None:
+    def toggle_record(self) -> None:
         try:
             if self._recorder.is_recording:
                 self.last_clip = self._recorder.stop(self._output_path("recording"))
                 log.info("stopped recording: %s", self.last_clip)
+                self._notify_saved()
             else:
                 self._recorder.start()
                 log.info("started recording")
@@ -64,8 +75,8 @@ class Controller:
             log.exception("failed to toggle recording")
 
     def start(self) -> None:
-        self._hotkeys.add_listener(SAVE_CLIP, self._on_save_clip)
-        self._hotkeys.add_listener(TOGGLE_RECORD, self._on_toggle_record)
+        self._hotkeys.add_listener(SAVE_CLIP, self.save_clip)
+        self._hotkeys.add_listener(TOGGLE_RECORD, self.toggle_record)
         self._pipeline.start()
         self._hotkeys.start(run_loop=False)  # share this Controller's main loop
 
@@ -83,7 +94,7 @@ class Controller:
             self._portal.close()
 
 
-def build_controller(settings, portal=None) -> Controller:
+def build_controller(settings, portal=None, clip_saved_cb=None) -> Controller:
     """Wire the real components: portal capture → pipeline → buffer + recorder → hotkeys."""
     from tea_clipper.audio import (
         build_audio_fragment,
@@ -114,4 +125,7 @@ def build_controller(settings, portal=None) -> Controller:
     pipeline.add_segment_listener(replay.on_segment_finalized)
     pipeline.add_segment_listener(recorder.on_segment_finalized)
     hotkeys = HotkeyService()
-    return Controller(settings, pipeline, replay, recorder, hotkeys, portal=portal)
+    return Controller(
+        settings, pipeline, replay, recorder, hotkeys,
+        portal=portal, clip_saved_cb=clip_saved_cb,
+    )
