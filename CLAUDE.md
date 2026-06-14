@@ -233,28 +233,56 @@ Spec: `docs/superpowers/specs/2026-06-13-audio-design.md` · Plan:
   `python -m tea_clipper` daemon was also confirmed writing video+audio buffer segments
   (H.264 2560×1440 + Opus), and a hotkey-saved clip measured mean −31 dB / max −6 dB of real
   stereo signal.
-- 📌 **Open PR:** https://github.com/dutchteaa/tea-clipper/pull/5 (`audio` → `main`).
+- ✅ **Merged:** PR #5 (`audio` → `main`, commit `e3aec69`).
+
+## Status — PySide6 UI (tray + window)
+
+Spec: `docs/superpowers/specs/2026-06-14-ui-design.md` · Plan:
+`docs/superpowers/plans/2026-06-14-ui.md`. Implemented (TDD) on the `ui` branch (stacked on
+`main`). Medal-style: capture runs in the background, the window is a view into it.
+
+- **Threading model (the key decision):** Qt owns the main thread (`QApplication.exec()`); a
+  daemon worker thread owns the engine's `GLib.MainLoop` + `Controller`. `build_controller()`
+  blocks on portal negotiation, so it *must* run off the UI thread. UI→engine actions marshal
+  via `GLib.idle_add`; engine→UI updates come back as thread-safe Qt signals.
+- ✅ `ui/engine_host.py` — `EngineHost(QObject)`: the **only** place threading lives. Builds/
+  starts/stops the `Controller` on the worker thread, persists the restore token, re-emits
+  engine events as Qt signals `state_changed(state, detail)` / `clip_saved(path)`. State
+  machine: `Idle → Starting → Recording`, `Recording → Restarting → Recording` (Apply/Re-pick),
+  any → `Error(detail)`. `apply_settings`/`repick_source` restart capture; `save_clip`/
+  `toggle_record` dispatch to the controller. **Unit-tested** with a fake builder/controller
+  (`tests/test_engine_host.py`); the worker thread + real loop is probe-verified.
+- ✅ `ui/settings_form.py` — `SettingsForm(QWidget)`: pure `Settings` ↔ widget mapping
+  (clip length, codec combo, hardware, bitrate, fps, output dir, audio picker). `load`/`collect`
+  round-trip preserves fields it doesn't edit (`segment_seconds`, `buffer_dir`,
+  `source_restore_token`). **Unit-tested offscreen** (`tests/test_settings_form.py`).
+- ✅ `ui/audio_picker.py` — `AudioPicker(QWidget)`: checkable grouped list (Default desktop/mic
+  tokens + concrete sinks/mics from `discover_audio_devices()`) → `settings.audio_devices`
+  (tokens or `node_name`s; empty = video-only). **Unit-tested** (`tests/test_audio_picker.py`).
+- ✅ `ui/main_window.py` — status dot + form + **Apply** (confirmation dialog warns capture
+  restarts) / **Open clips folder** / **Re-pick source**; window close hides to tray.
+- ✅ `ui/tray.py` — `QSystemTrayIcon` menu (Open settings · Save clip now · Toggle recording ·
+  Open clips folder · Quit); tooltip reflects state.
+- ✅ `ui/app.py` + `ui/__main__.py` — **`python -m tea_clipper.ui`** wires it all and auto-starts
+  capture. The headless daemon (`python -m tea_clipper`) is **kept** untouched.
+- Suite is **77 passing** (`.venv/bin/pytest`). PySide6 added to `pyproject` (`dev`/`gui` extras);
+  unit tests run with `QT_QPA_PLATFORM=offscreen` via a `qapp` conftest fixture.
+- ⏳ **Hardware probe pending:** offscreen wiring smoke-test passes (full app graph builds, signals
+  propagate to the tray tooltip), but the interactive run (real tray, screen picker, live
+  clip-save, Apply/Re-pick) needs a human at the KDE/Wayland session: `python -m tea_clipper.ui`.
 
 ## NEXT SESSION — handoff
 
-**State:** all five engine milestones are done and hardware-verified — the four core ones
-(engine-core, PortalManager, HotkeyService, Controller) are merged to `main`, and **audio** is
-complete on the `audio` branch with an **open PR → `main`** (see below). Suite is **60 passing**
-(`.venv/bin/pytest -m "engine or not engine"`). `python -m tea_clipper` records clips with real
-stereo desktop+mic audio today; fully end-to-end verified (a hotkey-saved clip measured
-mean −31 dB / max −6 dB of genuine signal).
+**State:** all six milestones are implemented. The five engine milestones (engine-core,
+PortalManager, HotkeyService, Controller, audio) are **merged to `main`**. The **PySide6 UI** is
+complete on the `ui` branch (stacked on `main`), suite **77 passing** (`.venv/bin/pytest`), but
+its interactive hardware probe is **not yet done**.
 
-**Immediate next step:** review + merge the audio PR
-(https://github.com/dutchteaa/tea-clipper/pull/5), then start the final milestone.
-
-**One milestone remains:**
-
-1. **PySide6 settings/status UI** (last). A small Qt form over `Settings` (clip length, codec,
-   bitrate, fps, **`audio_devices` picker** driven by `audio.discover_audio_devices()`, output
-   dir) + a status indicator + open-folder / re-pick-source buttons, driving a `Controller`.
-   KDE-native fit. Note: `AudioDevice` already carries `display_name` + `is_monitor` (desktop) +
-   `is_default` flags, so the picker can render a friendly grouped list and write `node_name`s
-   (or `@desktop@`/`@mic@`) into `audio_devices`.
+**Immediate next step:** run `python -m tea_clipper.ui` on the KDE/Wayland target and walk the
+Task 9 checklist in `docs/superpowers/plans/2026-06-14-ui.md` (tray appears, capture auto-starts,
+Save/Toggle from tray write files + update "Last clip", Apply shows the warning then restarts,
+Re-pick re-prompts the picker, Open folder works, close hides to tray, Quit exits). Then open a
+PR for the `ui` branch → `main`.
 
 **Gotchas worth remembering:**
 - `pipewiresrc` has cold-start latency — a clip saved within the first few seconds of launch is
@@ -265,5 +293,8 @@ mean −31 dB / max −6 dB of genuine signal).
 - Audio default-device detection shells out to `pactl` (PipeWire's PulseAudio-compat CLI) — a
   runtime dep in the same spirit as the `ffmpeg` subprocess and the `gst-plugins-good` requirement.
   It degrades gracefully if absent (the `@desktop@`/`@mic@` tokens just resolve to nothing).
+- UI threading: never call `build_controller()` / `EngineHost.start()` on the Qt main thread — it
+  blocks on portal negotiation. The engine lives on the worker thread; touch Qt widgets only from
+  the main thread and the engine only via `EngineHost` (which marshals both ways).
 - Git push auth on this machine goes through KWallet (see agent memory `git-auth-kwallet`); first
   push for a new token must be interactive.
