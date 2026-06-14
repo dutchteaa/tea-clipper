@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
+# Qt unit tests run without a display; must be set before any QApplication import.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import json
 import shutil
 import subprocess
@@ -63,3 +68,12 @@ def make_segment(path: Path, seconds: float = 2.0) -> Path:
         check=True,
     )
     return path
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """A single offscreen QApplication for all widget/QObject tests."""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    yield app
