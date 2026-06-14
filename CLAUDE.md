@@ -290,19 +290,52 @@ report `r_frame_rate=60/1` (was 165). Unit-tested in `tests/test_portal.py` (pur
 `PortalManager.open` passes `settings.fps`). The test source's hardcoded `framerate=30/1` is
 untouched.
 
-## NEXT SESSION — handoff
+## NEXT SESSION — handoff → **make an actual build**
 
-**State:** all six milestones are **complete and hardware-verified**. The five engine milestones
-(engine-core, PortalManager, HotkeyService, Controller, audio) plus the **PySide6 UI** (incl. the
-fps fix + UI refinements above) are **merged to `main`**. Suite is **78 passing**
-(`.venv/bin/pytest`). The product is feature-complete: `python -m tea_clipper.ui` runs the tray +
-settings/status app, and `python -m tea_clipper` runs the headless daemon — both record real
-stereo desktop+mic clips at the configured fps.
+**State:** the app is **feature-complete and on `main` (local + `origin/main` at `f384836`)**, all
+six milestones hardware-verified, suite **78 passing** (`.venv/bin/pytest`). `python -m
+tea_clipper.ui` (tray + window) and `python -m tea_clipper` (headless daemon) both record real
+stereo desktop+mic clips at the configured fps. Today it only runs from a source checkout in the
+`--system-site-packages` venv.
 
-**No milestone is outstanding.** Natural next steps if work continues: a `.desktop` file +
-autostart entry, packaging (AUR/Flatpak), and the small polish items deferred below.
+**Goal next session:** produce an **installable build** — something you can install and launch
+from the app menu, not `python -m …` from the repo. Target platform is **Arch/CachyOS + KDE
+Wayland** (the dev machine).
 
-**Deferred polish (optional, YAGNI):**
+**First decision to make (ask the user):** which distribution format?
+- **AUR PKGBUILD (recommended)** — native fit for the Arch target. Declares system deps instead of
+  bundling them, which sidesteps the hard part (see below). Lowest effort, most reliable here.
+- **Flatpak** — portable across distros, but bundling GStreamer (incl. `gst-plugin-va` for VAAPI)
+  + PyGObject + giving portal/PipeWire access through the sandbox is significantly more work.
+- **pipx / wheel** — simplest to publish, but PyGObject won't pip-install cleanly (the whole reason
+  the dev venv uses `--system-site-packages`), so users still need system PyGObject+GStreamer.
+
+**The core packaging constraint:** PyGObject + GStreamer come from the **system**, not pip — a
+self-contained PyInstaller/Nuitka binary is painful (gi typelibs + GStreamer plugin registry +
+VAAPI). So the build should **depend on** the native stack, not embed it.
+
+**Runtime deps the package must declare** (Arch names to confirm): `python` (3.12+),
+`python-gobject`, `gstreamer`, `gst-plugins-good` (hard req — `splitmuxsink`/`matroskamux`),
+`gst-plugins-base`, `gst-plugin-pipewire`, `gst-plugin-va`, `gst-plugins-ugly` (`x264enc`),
+`pyside6`, `ffmpeg`, `libpulse` (provides `pactl`), and an `xdg-desktop-portal` backend
+(`xdg-desktop-portal-kde`).
+
+**Prep work likely needed in-repo before/while packaging:**
+1. **Console entry points** in `pyproject.toml` `[project.scripts]`:
+   `tea-clipper = "tea_clipper.ui.app:main"` and `tea-clipper-daemon = "tea_clipper.__main__:main"`
+   (both `main()` already accept `argv=None`). Bump `version` from `0.0.1` → `0.1.0`.
+2. **`tea-clipper.desktop`** (`Exec=tea-clipper`, `Icon=tea-clipper`, KDE-appropriate Categories) —
+   `app.py` already calls `setDesktopFileName("tea-clipper")`, so the desktop id must match.
+3. **A real app icon** asset (e.g. `assets/tea-clipper.svg`) installed into the hicolor theme as
+   `tea-clipper`, and update `ui/icons.app_icon()` to prefer the bundled `tea-clipper` icon name
+   (currently it falls back to the theme's `media-record`).
+4. **PKGBUILD** (or Flatpak manifest) installing the package + `.desktop` + icon; verify it builds
+   in a clean `makepkg`/chroot and that the installed `tea-clipper` launches and records.
+
+**Open question:** packaging data files (desktop/icon) via setuptools vs. installing them in the
+PKGBUILD directly — decide alongside the format.
+
+**Deferred polish (optional, YAGNI — not blockers for a build):**
 - Window Record button doesn't sync when recording is toggled via hotkey/tray (no
   `recording_changed` signal yet).
 - "Configure shortcuts…" launches `systemsettings`; could instead call the GlobalShortcuts
