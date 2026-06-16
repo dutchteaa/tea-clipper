@@ -177,6 +177,43 @@ def test_clip_saved_cb_not_called_on_failure(tmp_path):
     assert saved == []
 
 
+def test_recording_changed_cb_fires_true_then_false(tmp_path):
+    events = []
+    recorder = FakeRecorder()
+    ctl, _pipeline, _hotkeys = _controller(tmp_path, recorder=recorder)
+    ctl._recording_changed_cb = events.append
+    ctl.start()
+    ctl.toggle_record()   # start
+    ctl.toggle_record()   # stop
+    assert events == [True, False]
+
+
+def test_recording_changed_cb_not_called_on_failure(tmp_path):
+    events = []
+
+    class BoomRecorder(FakeRecorder):
+        def start(self):
+            raise RuntimeError("cannot start")
+
+    ctl, _pipeline, _hotkeys = _controller(tmp_path, recorder=BoomRecorder())
+    ctl._recording_changed_cb = events.append
+    ctl.start()
+    ctl.toggle_record()   # start raises, caught
+    assert events == []
+
+
+def test_recording_changed_cb_passed_via_constructor(tmp_path):
+    events = []
+    settings = Settings(output_dir=str(tmp_path))
+    ctl = Controller(
+        settings, FakePipeline(), FakeReplay(), FakeRecorder(), FakeHotkeys(),
+        recording_changed_cb=events.append,
+    )
+    ctl.start()
+    ctl.toggle_record()
+    assert events == [True]
+
+
 def test_stop_tears_down(tmp_path):
     portal = FakePortal()
     settings = Settings(output_dir=str(tmp_path))
