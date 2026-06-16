@@ -50,14 +50,33 @@ the standard desktop portal, so it works without root or kernel hacks.
 On Arch/CachyOS, the plugin sets above map to:
 `sudo pacman -S gst-plugins-good gst-plugins-base gst-plugin-pipewire gst-plugin-va gst-plugins-ugly ffmpeg`
 
+## Installation
+
+### Arch / CachyOS
+
+tea-clipper ships a `PKGBUILD`, so a native package is one command away:
+
+```bash
+git clone https://github.com/dutchteaa/tea-clipper.git
+cd tea-clipper
+makepkg -si
+```
+
+This builds a package and installs it along with all required dependencies (the native
+GStreamer / PyGObject / PySide6 / ffmpeg stack — declared as deps, not bundled). Afterwards,
+launch **tea-clipper** from your application menu, or run `tea-clipper` (full app) /
+`tea-clipper-daemon` (headless) from a terminal.
+
+Prefer not to install? You can still run straight from a checkout — see [Development](#development).
+
 ## Status
 
-✅ **Feature-complete — runnable today, verified end-to-end on real hardware** (KDE/Wayland,
-AMD RDNA3).
+✅ **Released as `v0.1.0` — feature-complete, installable, and verified end-to-end on real
+hardware** (KDE/Wayland, AMD RDNA3).
 
 tea-clipper captures your screen + audio, keeps a rolling buffer, and saves clips on a global
-hotkey — driven either by the system-tray app (`python -m tea_clipper.ui`) or the headless
-daemon (`python -m tea_clipper`).
+hotkey — driven either by the system-tray app (`tea-clipper`) or the headless daemon
+(`tea-clipper-daemon`).
 
 - ✅ Settings (TOML), encoder probing/selection (VAAPI with software fallback)
 - ✅ Rolling, self-pruning segment buffer + per-segment finalize events
@@ -75,23 +94,20 @@ capture → buffer → stitch path is exercised in CI without a real screencast.
 
 ## Running
 
-The full app — system tray + settings/status window:
+Once installed, launch **tea-clipper** from your application menu, or from a terminal:
 
 ```bash
-python -m tea_clipper.ui
+tea-clipper          # full app: system tray + settings/status window
+tea-clipper-daemon   # headless: no UI, same engine
 ```
+
+(From a source checkout the equivalents are `python -m tea_clipper.ui` and `python -m tea_clipper`.)
 
 Closing the window hides to the tray (capture keeps running); quit from the tray menu. The
 window lets you set clip length, codec, bitrate, fps, audio sources, and output folder, save a
 clip or toggle recording, re-pick the source, and open the shortcut editor.
 
-Or the headless daemon — no UI, same engine:
-
-```bash
-python -m tea_clipper
-```
-
-Either way, a monitor picker appears the first time (the choice is remembered after), then
+A monitor picker appears the first time (the choice is remembered after), then
 capture runs in the background. Press the global hotkeys — by default `Ctrl+Alt+C` saves the
 last clip and `Ctrl+Alt+R` toggles manual recording (rebind them in **System Settings →
 Shortcuts**, or via the UI's *Configure shortcuts…* button). Clips land in `~/Videos/tea-clipper`.
