@@ -323,19 +323,28 @@ plugin registry + VAAPI). Flatpak is the deferred option for cross-distro distri
   into the venv → the packaged `tea-clipper` console script auto-started capture (restore token
   reused, no picker) and filled the rolling buffer with H.264 2560×1440@60 + Opus-stereo segments.
 
-**The actual `makepkg -si` + app-menu launch was NOT run by the agent** (needs the user's sudo
-password for makedepends + `pacman -U`). To finish on the dev box:
-`makepkg -si` from the repo root, then launch **tea-clipper** from the KDE app menu and confirm
-save-clip/record work. (A cold-start save right after launch can produce a short/empty clip — the
-buffer isn't full yet; this is expected, not a bug.)
+- ✅ **Full `makepkg -si` hardware-verified** by the user on the dev box (Arch/CachyOS + KDE
+  Wayland): the package builds from the recipe, installs cleanly, and the installed **tea-clipper**
+  launches and works. (A cold-start save right after launch can produce a short/empty clip — the
+  buffer isn't full yet; this is expected, not a bug.)
+- ✅ **Released:** GitHub Release `v0.1.0` (https://github.com/dutchteaa/tea-clipper/releases/tag/v0.1.0).
 
 ## NEXT SESSION — handoff
 
 **State:** **feature-complete + released as `v0.1.0`** on `origin/main` (`2062a30`), suite **78
 passing** (`.venv/bin/pytest`). Installable via the AUR `PKGBUILD` (`makepkg -si`); also runs from
-a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`). No milestone is in flight —
-next session is open. Candidate work: publish the PKGBUILD to the **AUR** proper (own repo +
-`.SRCINFO`); a `tea-clipper-git` VCS package; or pick up deferred polish below.
+a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`).
+
+**AUR submission — prepared, push pending:** a ready-to-push AUR repo lives at
+`~/Projects/aur-tea-clipper/` (`PKGBUILD` + generated `.SRCINFO`, committed; remote
+`ssh://aur@aur.archlinux.org/tea-clipper.git`; name is free on AUR). An ed25519 deploy key was
+generated at `~/.ssh/aur` (+ `~/.ssh/config` host entry). **Remaining (user-only):** register
+`~/.ssh/aur.pub` on the AUR account, then `cd ~/Projects/aur-tea-clipper && git push -u origin
+master`. On a future `pkgver` bump: edit `PKGBUILD`, `updpkgsums`, `makepkg --printsrcinfo >
+.SRCINFO`, commit, push.
+
+No milestone is in flight — next session is open. Candidate work: finish the AUR push; a
+`tea-clipper-git` VCS package; or pick up deferred polish below.
 
 **Deferred polish (optional, YAGNI):**
 - Window Record button doesn't sync when recording is toggled via hotkey/tray (no
