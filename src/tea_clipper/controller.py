@@ -27,7 +27,7 @@ class Controller:
 
     def __init__(
         self, settings, pipeline, replay_buffer, manual_recorder, hotkey_service,
-        portal=None, clip_saved_cb=None,
+        portal=None, clip_saved_cb=None, recording_changed_cb=None,
     ) -> None:
         self._settings = settings
         self._pipeline = pipeline
@@ -36,6 +36,7 @@ class Controller:
         self._hotkeys = hotkey_service
         self._portal = portal
         self._clip_saved_cb = clip_saved_cb
+        self._recording_changed_cb = recording_changed_cb
         self._loop = None
         self.last_clip = None
 
@@ -50,6 +51,13 @@ class Controller:
                 self._clip_saved_cb(str(self.last_clip))
             except Exception:
                 log.exception("clip_saved_cb raised")
+
+    def _notify_recording(self, recording: bool) -> None:
+        if self._recording_changed_cb is not None:
+            try:
+                self._recording_changed_cb(recording)
+            except Exception:
+                log.exception("recording_changed_cb raised")
 
     def save_clip(self) -> None:
         try:
@@ -67,10 +75,12 @@ class Controller:
             if self._recorder.is_recording:
                 self.last_clip = self._recorder.stop(self._output_path("recording"))
                 log.info("stopped recording: %s", self.last_clip)
+                self._notify_recording(False)
                 self._notify_saved()
             else:
                 self._recorder.start()
                 log.info("started recording")
+                self._notify_recording(True)
         except Exception:
             log.exception("failed to toggle recording")
 
@@ -94,7 +104,7 @@ class Controller:
             self._portal.close()
 
 
-def build_controller(settings, portal=None, clip_saved_cb=None) -> Controller:
+def build_controller(settings, portal=None, clip_saved_cb=None, recording_changed_cb=None) -> Controller:
     """Wire the real components: portal capture → pipeline → buffer + recorder → hotkeys."""
     from tea_clipper.audio import (
         build_audio_fragment,
@@ -128,4 +138,5 @@ def build_controller(settings, portal=None, clip_saved_cb=None) -> Controller:
     return Controller(
         settings, pipeline, replay, recorder, hotkeys,
         portal=portal, clip_saved_cb=clip_saved_cb,
+        recording_changed_cb=recording_changed_cb,
     )

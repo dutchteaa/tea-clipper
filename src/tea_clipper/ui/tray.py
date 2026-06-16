@@ -24,7 +24,8 @@ class TrayIcon(QSystemTrayIcon):
         menu = QMenu()
         menu.addAction(self._action("Open settings", self._open_settings))
         menu.addAction(self._action("Save clip now", host.save_clip))
-        menu.addAction(self._action("Toggle recording", host.toggle_record))
+        self._record_action = self._action("Start recording", host.toggle_record)
+        menu.addAction(self._record_action)
         menu.addAction(self._action("Open clips folder", self._open_folder))
         menu.addAction(self._action("Configure shortcuts…", self._open_shortcuts))
         menu.addSeparator()
@@ -33,6 +34,8 @@ class TrayIcon(QSystemTrayIcon):
         self.activated.connect(self._on_activated)
 
         host.state_changed.connect(self._on_state)
+        host.clip_saved.connect(self._on_clip_saved)
+        host.recording_changed.connect(self._on_recording_changed)
         self._on_state(host.state, "")
 
     def _action(self, label: str, slot) -> QAction:
@@ -67,6 +70,14 @@ class TrayIcon(QSystemTrayIcon):
         if detail:
             tip += f" ({detail})"
         self.setToolTip(tip)
+
+    def _on_clip_saved(self, path: str) -> None:
+        self.showMessage("Clip saved", Path(path).name)
+
+    def _on_recording_changed(self, recording: bool) -> None:
+        self._record_action.setText("Stop recording" if recording else "Start recording")
+        if recording:
+            self.showMessage("tea-clipper", "Recording started")
 
     def _quit(self) -> None:
         self._host.stop()

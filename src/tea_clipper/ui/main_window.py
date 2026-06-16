@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         save_btn.clicked.connect(host.save_clip)
         self._record_btn = QPushButton("● Record")
         self._record_btn.setCheckable(True)
-        self._record_btn.toggled.connect(self._on_record_toggled)
+        self._record_btn.clicked.connect(self._on_record_clicked)
 
         capture = QHBoxLayout()
         capture.addWidget(save_btn)
@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
 
         host.state_changed.connect(self._on_state)
         host.clip_saved.connect(self._on_clip_saved)
+        host.recording_changed.connect(self._on_recording_changed)
         self._on_state(host.state, "")
 
     def _on_state(self, state: str, detail: str) -> None:
@@ -87,9 +88,13 @@ class MainWindow(QMainWindow):
     def _on_clip_saved(self, path: str) -> None:
         self._last_clip.setText(f"Last clip: {path}")
 
-    def _on_record_toggled(self, recording: bool) -> None:
-        self._record_btn.setText("■ Stop recording" if recording else "● Record")
+    def _on_record_clicked(self) -> None:
+        # User intent only; the real checked state is driven by recording_changed.
         self._host.toggle_record()
+
+    def _on_recording_changed(self, recording: bool) -> None:
+        self._record_btn.setChecked(recording)
+        self._record_btn.setText("■ Stop recording" if recording else "● Record")
 
     def _on_apply(self) -> None:
         confirm = QMessageBox.question(

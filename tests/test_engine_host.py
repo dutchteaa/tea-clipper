@@ -34,7 +34,7 @@ def test_bring_up_success_persists_and_emits(qapp, tmp_path):
     fake = FakeController()
     captured = {}
 
-    def builder(settings, clip_saved_cb=None):
+    def builder(settings, clip_saved_cb=None, recording_changed_cb=None):
         captured["cb"] = clip_saved_cb
         return fake
 
@@ -50,7 +50,7 @@ def test_bring_up_success_persists_and_emits(qapp, tmp_path):
 
 
 def test_bring_up_failure_emits_error(qapp, tmp_path):
-    def builder(settings, clip_saved_cb=None):
+    def builder(settings, clip_saved_cb=None, recording_changed_cb=None):
         raise RuntimeError("portal denied")
 
     host, _cfg = _host(tmp_path, builder)
@@ -64,7 +64,7 @@ def test_bring_up_failure_emits_error(qapp, tmp_path):
 def test_clip_saved_cb_reemits_qt_signal(qapp, tmp_path):
     captured = {}
 
-    def builder(settings, clip_saved_cb=None):
+    def builder(settings, clip_saved_cb=None, recording_changed_cb=None):
         captured["cb"] = clip_saved_cb
         return FakeController()
 
@@ -79,7 +79,7 @@ def test_clip_saved_cb_reemits_qt_signal(qapp, tmp_path):
 def test_save_and_toggle_dispatch_to_controller(qapp, tmp_path):
     fake = FakeController()
     host, _cfg = _host(
-        tmp_path, lambda s, clip_saved_cb=None: fake, dispatch=lambda fn: fn()
+        tmp_path, lambda s, clip_saved_cb=None, recording_changed_cb=None: fake, dispatch=lambda fn: fn()
     )
     host._bring_up()
     host.save_clip()
@@ -89,7 +89,7 @@ def test_save_and_toggle_dispatch_to_controller(qapp, tmp_path):
 
 
 def test_apply_settings_swaps_and_restarts(qapp, tmp_path, monkeypatch):
-    host, _cfg = _host(tmp_path, lambda s, clip_saved_cb=None: FakeController())
+    host, _cfg = _host(tmp_path, lambda s, clip_saved_cb=None, recording_changed_cb=None: FakeController())
     calls = []
     monkeypatch.setattr(host, "restart", lambda: calls.append("restart"))
     new = Settings(clip_length_seconds=99)
@@ -101,10 +101,26 @@ def test_apply_settings_swaps_and_restarts(qapp, tmp_path, monkeypatch):
 def test_repick_clears_token_then_restarts(qapp, tmp_path, monkeypatch):
     settings = Settings(output_dir=str(tmp_path), source_restore_token="tok")
     cfg = tmp_path / "config.toml"
-    host = EngineHost(settings, cfg, builder=lambda s, clip_saved_cb=None: FakeController())
+    host = EngineHost(settings, cfg, builder=lambda s, clip_saved_cb=None, recording_changed_cb=None: FakeController())
     calls = []
     monkeypatch.setattr(host, "stop", lambda: calls.append("stop"))
     monkeypatch.setattr(host, "start", lambda: calls.append("start"))
     host.repick_source()
     assert settings.source_restore_token == ""
     assert calls == ["stop", "start"]
+
+
+def test_recording_changed_cb_reemits_qt_signal(qapp, tmp_path):
+    captured = {}
+
+    def builder(settings, clip_saved_cb=None, recording_changed_cb=None):
+        captured["rec_cb"] = recording_changed_cb
+        return FakeController()
+
+    host, _cfg = _host(tmp_path, builder)
+    got = []
+    host.recording_changed.connect(got.append)
+    host._bring_up()
+    captured["rec_cb"](True)
+    captured["rec_cb"](False)
+    assert got == [True, False]
