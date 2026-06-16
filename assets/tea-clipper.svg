@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- tea-clipper: a teacup (the "tea") with a record dot (the "clip") -->
+  <title>tea-clipper</title>
+  <g fill="none" stroke="#2b2b2b" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <!-- steam -->
+    <path d="M108 50 q-14 -16 0 -32" opacity="0.7"/>
+    <path d="M148 50 q-14 -16 0 -32" opacity="0.7"/>
+    <!-- cup body -->
+    <path d="M56 96 h120 v44 a60 60 0 0 1 -120 0 z" fill="#f4f0e6"/>
+    <!-- handle -->
+    <path d="M176 104 a30 30 0 0 1 0 56"/>
+    <!-- saucer -->
+    <path d="M44 212 h148" stroke-width="14"/>
+  </g>
+  <!-- record dot (recording / clip) -->
+  <circle cx="186" cy="78" r="30" fill="#e23b3b" stroke="#ffffff" stroke-width="8"/>
+</svg>
