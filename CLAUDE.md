@@ -290,52 +290,54 @@ report `r_frame_rate=60/1` (was 165). Unit-tested in `tests/test_portal.py` (pur
 `PortalManager.open` passes `settings.fps`). The test source's hardcoded `framerate=30/1` is
 untouched.
 
-## NEXT SESSION — handoff → **make an actual build**
+## Status — packaging (AUR build)
 
-**State:** the app is **feature-complete and on `main` (local + `origin/main` at `f384836`)**, all
-six milestones hardware-verified, suite **78 passing** (`.venv/bin/pytest`). `python -m
-tea_clipper.ui` (tray + window) and `python -m tea_clipper` (headless daemon) both record real
-stereo desktop+mic clips at the configured fps. Today it only runs from a source checkout in the
-`--system-site-packages` venv.
+The **first installable build is done and released as `v0.1.0`** (tag pushed; `main` at
+`2062a30`). Chose the **AUR PKGBUILD** format — native fit for the Arch/CachyOS target; it
+**declares** the native GStreamer/PyGObject/PySide6/ffmpeg/pactl stack as deps rather than
+bundling it (a self-contained PyInstaller/Nuitka binary is painful: gi typelibs + GStreamer
+plugin registry + VAAPI). Flatpak is the deferred option for cross-distro distribution.
 
-**Goal next session:** produce an **installable build** — something you can install and launch
-from the app menu, not `python -m …` from the repo. Target platform is **Arch/CachyOS + KDE
-Wayland** (the dev machine).
+- ✅ `pyproject.toml` — `version` `0.0.1`→`0.1.0`; `[project.scripts]` console entry points
+  `tea-clipper = tea_clipper.ui.app:main` + `tea-clipper-daemon = tea_clipper.__main__:main`;
+  SPDX `license = "MIT"`, readme, URLs. **Gotcha hit:** with the SPDX `license` field, modern
+  setuptools (PEP 639) **forbids** the old `License :: OSI Approved` classifier — the wheel build
+  aborts until it's removed. Don't re-add it.
+- ✅ `assets/tea-clipper.svg` — real app icon (teacup + red record dot; legible at 32px),
+  installed into the hicolor theme as `tea-clipper`. `ui/icons.app_icon()` now prefers the bundled
+  `tea-clipper` name, then `media-record`→fallbacks, then the Qt glyph (so a source checkout still
+  shows *something*).
+- ✅ `tea-clipper.desktop` — `Exec=tea-clipper`, `Icon=tea-clipper` (matches
+  `app.setDesktopFileName("tea-clipper")`), `AudioVideo;Recorder`; passes `desktop-file-validate`.
+- ✅ `PKGBUILD` — `depends` = `python python-gobject python-tomli-w gstreamer gst-plugins-base
+  gst-plugins-good gst-plugin-pipewire gst-plugin-va gst-plugins-ugly pyside6 ffmpeg libpulse`
+  (all confirmed in official Arch/CachyOS repos — **no AUR-only deps**); `optdepends`
+  `xdg-desktop-portal-kde`; `makedepends` `python-build python-installer python-wheel
+  python-setuptools`. `build()` builds a wheel (`python -m build --wheel --no-isolation`);
+  `package()` installs it via `python -m installer` + the `.desktop`/icon/LICENSE. Data files are
+  installed **by the PKGBUILD directly**, not via setuptools.
+- ✅ **Verified:** wheel builds clean; `installer` via the system interpreter lands
+  `/usr/bin/tea-clipper{,-daemon}` + `/usr/lib/python3.x/site-packages/tea_clipper/` + the
+  hicolor icon + desktop + license; `makepkg --verifysource` passes against the published
+  `v0.1.0` tarball (checksum pinned via `updpkgsums`). **Runtime-verified** by `pip install .`
+  into the venv → the packaged `tea-clipper` console script auto-started capture (restore token
+  reused, no picker) and filled the rolling buffer with H.264 2560×1440@60 + Opus-stereo segments.
 
-**First decision to make (ask the user):** which distribution format?
-- **AUR PKGBUILD (recommended)** — native fit for the Arch target. Declares system deps instead of
-  bundling them, which sidesteps the hard part (see below). Lowest effort, most reliable here.
-- **Flatpak** — portable across distros, but bundling GStreamer (incl. `gst-plugin-va` for VAAPI)
-  + PyGObject + giving portal/PipeWire access through the sandbox is significantly more work.
-- **pipx / wheel** — simplest to publish, but PyGObject won't pip-install cleanly (the whole reason
-  the dev venv uses `--system-site-packages`), so users still need system PyGObject+GStreamer.
+**The actual `makepkg -si` + app-menu launch was NOT run by the agent** (needs the user's sudo
+password for makedepends + `pacman -U`). To finish on the dev box:
+`makepkg -si` from the repo root, then launch **tea-clipper** from the KDE app menu and confirm
+save-clip/record work. (A cold-start save right after launch can produce a short/empty clip — the
+buffer isn't full yet; this is expected, not a bug.)
 
-**The core packaging constraint:** PyGObject + GStreamer come from the **system**, not pip — a
-self-contained PyInstaller/Nuitka binary is painful (gi typelibs + GStreamer plugin registry +
-VAAPI). So the build should **depend on** the native stack, not embed it.
+## NEXT SESSION — handoff
 
-**Runtime deps the package must declare** (Arch names to confirm): `python` (3.12+),
-`python-gobject`, `gstreamer`, `gst-plugins-good` (hard req — `splitmuxsink`/`matroskamux`),
-`gst-plugins-base`, `gst-plugin-pipewire`, `gst-plugin-va`, `gst-plugins-ugly` (`x264enc`),
-`pyside6`, `ffmpeg`, `libpulse` (provides `pactl`), and an `xdg-desktop-portal` backend
-(`xdg-desktop-portal-kde`).
+**State:** **feature-complete + released as `v0.1.0`** on `origin/main` (`2062a30`), suite **78
+passing** (`.venv/bin/pytest`). Installable via the AUR `PKGBUILD` (`makepkg -si`); also runs from
+a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`). No milestone is in flight —
+next session is open. Candidate work: publish the PKGBUILD to the **AUR** proper (own repo +
+`.SRCINFO`); a `tea-clipper-git` VCS package; or pick up deferred polish below.
 
-**Prep work likely needed in-repo before/while packaging:**
-1. **Console entry points** in `pyproject.toml` `[project.scripts]`:
-   `tea-clipper = "tea_clipper.ui.app:main"` and `tea-clipper-daemon = "tea_clipper.__main__:main"`
-   (both `main()` already accept `argv=None`). Bump `version` from `0.0.1` → `0.1.0`.
-2. **`tea-clipper.desktop`** (`Exec=tea-clipper`, `Icon=tea-clipper`, KDE-appropriate Categories) —
-   `app.py` already calls `setDesktopFileName("tea-clipper")`, so the desktop id must match.
-3. **A real app icon** asset (e.g. `assets/tea-clipper.svg`) installed into the hicolor theme as
-   `tea-clipper`, and update `ui/icons.app_icon()` to prefer the bundled `tea-clipper` icon name
-   (currently it falls back to the theme's `media-record`).
-4. **PKGBUILD** (or Flatpak manifest) installing the package + `.desktop` + icon; verify it builds
-   in a clean `makepkg`/chroot and that the installed `tea-clipper` launches and records.
-
-**Open question:** packaging data files (desktop/icon) via setuptools vs. installing them in the
-PKGBUILD directly — decide alongside the format.
-
-**Deferred polish (optional, YAGNI — not blockers for a build):**
+**Deferred polish (optional, YAGNI):**
 - Window Record button doesn't sync when recording is toggled via hotkey/tray (no
   `recording_changed` signal yet).
 - "Configure shortcuts…" launches `systemsettings`; could instead call the GlobalShortcuts
