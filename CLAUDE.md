@@ -310,12 +310,20 @@ plugin registry + VAAPI). Flatpak is the deferred option for cross-distro distri
 - ✅ `tea-clipper.desktop` — `Exec=tea-clipper`, `Icon=tea-clipper` (matches
   `app.setDesktopFileName("tea-clipper")`), `AudioVideo;Recorder`; passes `desktop-file-validate`.
 - ✅ `PKGBUILD` — `depends` = `python python-gobject python-tomli-w gstreamer gst-plugins-base
-  gst-plugins-good gst-plugin-pipewire gst-plugin-va gst-plugins-ugly pyside6 ffmpeg libpulse`
-  (all confirmed in official Arch/CachyOS repos — **no AUR-only deps**); `optdepends`
-  `xdg-desktop-portal-kde`; `makedepends` `python-build python-installer python-wheel
-  python-setuptools`. `build()` builds a wheel (`python -m build --wheel --no-isolation`);
-  `package()` installs it via `python -m installer` + the `.desktop`/icon/LICENSE. Data files are
-  installed **by the PKGBUILD directly**, not via setuptools.
+  gst-plugins-good gst-plugin-pipewire gst-plugin-va gst-plugins-ugly pyside6 ffmpeg libpulse
+  xdg-desktop-portal` (the portal **frontend** is a hard dep — the app calls ScreenCast +
+  GlobalShortcuts over D-Bus; all confirmed in official Arch/CachyOS repos — **no AUR-only deps**);
+  `optdepends` `xdg-desktop-portal-kde` (the **backend**, DE-specific); `makedepends`
+  `python-build python-installer python-wheel python-setuptools` (setuptools = the build backend).
+  `build()`/`package()` follow the official PEP 517 snippet (`python -m build --wheel
+  --no-isolation` → `python -m installer --destdir=…`); the `.desktop`/icon/LICENSE are installed
+  **by the PKGBUILD directly**, not via setuptools.
+- ✅ **Standards-audited** against the live Arch Wiki *Python package guidelines* + *AUR submission
+  guidelines* (2026-06): maintainer email obfuscated; `arch=any` (pure-Python); upstream source
+  tarball per RFC0020; no `check()` (the suite needs offscreen Qt + the package importable and is
+  split unit-vs-hardware-probe — can't be validated in a clean chroot from here; it's a SHOULD, not
+  a MUST). The **AUR repo** also ships a 0BSD `LICENSE` for the packaging sources + a `.gitignore`
+  (`*` then force-add `PKGBUILD`/`.SRCINFO`/`LICENSE`) so `makepkg` artifacts never get committed.
 - ✅ **Verified:** wheel builds clean; `installer` via the system interpreter lands
   `/usr/bin/tea-clipper{,-daemon}` + `/usr/lib/python3.x/site-packages/tea_clipper/` + the
   hicolor icon + desktop + license; `makepkg --verifysource` passes against the published
@@ -335,12 +343,12 @@ plugin registry + VAAPI). Flatpak is the deferred option for cross-distro distri
 passing** (`.venv/bin/pytest`). Installable via the AUR `PKGBUILD` (`makepkg -si`); also runs from
 a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`).
 
-**AUR submission — prepared, push pending:** a ready-to-push AUR repo lives at
-`~/Projects/aur-tea-clipper/` (`PKGBUILD` + generated `.SRCINFO`, committed; remote
-`ssh://aur@aur.archlinux.org/tea-clipper.git`; name is free on AUR). An ed25519 deploy key was
-generated at `~/.ssh/aur` (+ `~/.ssh/config` host entry). **Remaining (user-only):** register
-`~/.ssh/aur.pub` on the AUR account, then `cd ~/Projects/aur-tea-clipper && git push -u origin
-master`. On a future `pkgver` bump: edit `PKGBUILD`, `updpkgsums`, `makepkg --printsrcinfo >
+**AUR submission — prepared & standards-audited, push pending:** a ready-to-push AUR repo lives at
+`~/Projects/aur-tea-clipper/` (`PKGBUILD` + generated `.SRCINFO` + 0BSD `LICENSE` + `.gitignore`,
+committed on `master`; remote `ssh://aur@aur.archlinux.org/tea-clipper.git`; name is free on AUR).
+An ed25519 deploy key was generated at `~/.ssh/aur` (+ `~/.ssh/config` host entry). **Remaining
+(user-only):** register `~/.ssh/aur.pub` on the AUR account, then `cd ~/Projects/aur-tea-clipper
+&& git push -u origin master`. On a future `pkgver` bump: edit `PKGBUILD`, `updpkgsums`, `makepkg --printsrcinfo >
 .SRCINFO`, commit, push.
 
 No milestone is in flight — next session is open. Candidate work: finish the AUR push; a

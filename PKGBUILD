@@ -1,4 +1,4 @@
-# Maintainer: dutchteaa <aiden.vonk07@gmail.com>
+# Maintainer: dutchteaa <aiden dot vonk07 at gmail dot com>
 pkgname=tea-clipper
 pkgver=0.1.0
 pkgrel=1
@@ -19,9 +19,10 @@ depends=(
   'pyside6'
   'ffmpeg'             # lossless clip stitching (-c copy)
   'libpulse'           # provides pactl for audio-device discovery
+  'xdg-desktop-portal' # ScreenCast + GlobalShortcuts portal frontend (D-Bus) -- hard requirement
 )
 optdepends=(
-  'xdg-desktop-portal-kde: ScreenCast + GlobalShortcuts portal backend for KDE Plasma'
+  'xdg-desktop-portal-kde: portal backend for KDE Plasma (other DEs: -gnome, -wlr, ...)'
 )
 makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
