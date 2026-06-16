@@ -13,6 +13,7 @@ from tea_clipper.ui.engine_host import EngineHost
 from tea_clipper.ui.icons import app_icon
 from tea_clipper.ui.main_window import MainWindow
 from tea_clipper.ui.tray import TrayIcon
+from tea_clipper.ui.update_prompt import UpdateChecker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -34,6 +35,11 @@ def main(argv: list[str] | None = None) -> int:
     window.show()
 
     host.start()  # auto-start capture (picker may appear the first time)
+
+    updater = UpdateChecker(settings, config)
+    updater.start()
+    app._tea_updater = updater  # keep a reference alive for the app's lifetime
+
     return app.exec()
 
 

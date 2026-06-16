@@ -358,11 +358,45 @@ path as `clip_saved`).
   both instant clips and finished recordings since both fire `clip_saved`); the toggle menu
   action relabels Start/Stop on `recording_changed` and toasts "Recording started" on start
   (no toast on stop — the clip-saved toast already covers it, avoiding a double notification).
-- Suite **86 passing** (`.venv/bin/pytest`); new `tests/test_main_window.py` + `tests/test_tray.py`
-  plus extended controller/engine-host tests. Per-task spec+quality review and a final
-  integration review all passed.
+- Suite **101 passing** post-merge (`.venv/bin/pytest`); new `tests/test_main_window.py` +
+  `tests/test_tray.py` plus extended controller/engine-host tests. Per-task spec+quality review
+  and a final integration review all passed.
 - ⏳ **Hardware verification pending** (Task 5): on KDE/Wayland, confirm hotkey/tray/button stay
   in sync and the toasts appear while the window is hidden. (`python -m tea_clipper.ui`.)
+
+## Status — startup update check (GitHub Releases)
+
+Spec: `docs/superpowers/specs/2026-06-16-update-check-design.md` · Plan:
+`docs/superpowers/plans/2026-06-16-update-check.md`. Implemented (TDD, subagent-driven) on the
+`update-check` branch (stacked on `main`). AUR isn't published yet (registration disabled), so
+GitHub Releases is the source; **"update" only opens the release page** — no self-install (that
+would fight pacman). GUI only — the headless daemon is untouched.
+
+- ✅ `__init__.__version__` bumped `0.0.1`→`0.1.0` to match `pyproject.toml` (now the version
+  source of truth; keep both in sync on a `pkgver` bump).
+- ✅ `Settings.skipped_update_version: str = ""` — persists a permanently-skipped release tag.
+  `Settings.load` already drops unknown keys, so old configs are forward-compatible.
+- ✅ `update_check.py` — stdlib-only (`urllib`+`json`, **no new dep**): `parse_version` (tolerant,
+  never raises), `is_newer`, `should_prompt`, `UpdateInfo`, and `fetch_latest_release()` which
+  returns `None` on **any** network/HTTP/JSON error (never raises into the UI). `CURRENT_VERSION =
+  tea_clipper.__version__`.
+- ✅ `ui/update_prompt.py` — pure `decide_update_action(info, settings)` (unit-tested) + a
+  `QThread`-based `UpdateChecker`: the blocking fetch runs on a worker thread, the result marshals
+  back via a Qt signal, and a `QMessageBox` (Update → open release page / Skip this version →
+  persist / Not now) shows on the main thread. `app.py` starts it after `host.start()` and retains
+  the reference (`app._tea_updater`) so the running QThread isn't GC'd.
+- Suite **101 passing** post-merge (`.venv/bin/pytest`); new `tests/test_update_check.py` +
+  `tests/test_update_prompt.py` + extended settings tests. Per-task + final integration review
+  passed. With the live release at `v0.1.0` and the running version `0.1.0`, `should_prompt` is
+  False → **no dialog** (correct "you're up to date" path).
+- **Deliberate YAGNI deviation from the spec:** the spec mentioned an `importlib.metadata`
+  fallback for `CURRENT_VERSION`; dropped because `__version__` always exists. The plain import is
+  the simpler correct choice.
+- ⏳ **Hardware verification pending** (Task 7): the live GitHub fetch + the real dialog are the
+  unit-vs-probe split's "probe" half. To force the dialog, temporarily set `__version__` to a low
+  value (e.g. `0.0.1`), run `python -m tea_clipper.ui`, and confirm the notes show + the 3 buttons
+  behave (open page / persist skip → suppressed next launch / dismiss). **Revert** the version
+  after.
 
 ## NEXT SESSION — handoff
 
