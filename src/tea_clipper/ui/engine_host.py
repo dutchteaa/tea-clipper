@@ -20,6 +20,7 @@ class EngineHost(QObject):
 
     state_changed = Signal(str, str)
     clip_saved = Signal(str)
+    recording_changed = Signal(bool)
 
     def __init__(self, settings, config_path, builder=build_controller, dispatch=None, parent=None):
         super().__init__(parent)
@@ -42,11 +43,18 @@ class EngineHost(QObject):
     def _on_clip_saved(self, path: str) -> None:
         self.clip_saved.emit(path)
 
+    def _on_recording_changed(self, recording: bool) -> None:
+        self.recording_changed.emit(recording)
+
     def _bring_up(self) -> None:
         """Build + start the controller. Runs on the worker thread (sync in tests)."""
         try:
             self._set_state("Starting")
-            self._controller = self._builder(self._settings, clip_saved_cb=self._on_clip_saved)
+            self._controller = self._builder(
+                self._settings,
+                clip_saved_cb=self._on_clip_saved,
+                recording_changed_cb=self._on_recording_changed,
+            )
             self._settings.save(self._config_path)
             self._controller.start()
             self._set_state("Recording")
