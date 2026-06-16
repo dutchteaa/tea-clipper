@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=tea-clipper
+GenericName=Instant Replay Clipper
+Comment=Medal-style instant-replay game clipper for Wayland
+Exec=tea-clipper
+Icon=tea-clipper
+Terminal=false
+Categories=AudioVideo;Recorder;
+Keywords=clip;replay;record;screencast;gameplay;
+StartupNotify=true
