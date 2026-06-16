@@ -361,8 +361,9 @@ path as `clip_saved`).
 - Suite **101 passing** post-merge (`.venv/bin/pytest`); new `tests/test_main_window.py` +
   `tests/test_tray.py` plus extended controller/engine-host tests. Per-task spec+quality review
   and a final integration review all passed.
-- ⏳ **Hardware verification pending** (Task 5): on KDE/Wayland, confirm hotkey/tray/button stay
-  in sync and the toasts appear while the window is hidden. (`python -m tea_clipper.ui`.)
+- ✅ **Hardware-verified** (2026-06-17) on KDE/Wayland: `python -m tea_clipper.ui` — hotkey/tray/
+  window-button stay in sync and the clip-saved + "Recording started" toasts appear. Merged to
+  `main`.
 
 ## Status — startup update check (GitHub Releases)
 
@@ -392,17 +393,38 @@ would fight pacman). GUI only — the headless daemon is untouched.
 - **Deliberate YAGNI deviation from the spec:** the spec mentioned an `importlib.metadata`
   fallback for `CURRENT_VERSION`; dropped because `__version__` always exists. The plain import is
   the simpler correct choice.
-- ⏳ **Hardware verification pending** (Task 7): the live GitHub fetch + the real dialog are the
-  unit-vs-probe split's "probe" half. To force the dialog, temporarily set `__version__` to a low
-  value (e.g. `0.0.1`), run `python -m tea_clipper.ui`, and confirm the notes show + the 3 buttons
-  behave (open page / persist skip → suppressed next launch / dismiss). **Revert** the version
-  after.
+- ✅ **Hardware-verified** (2026-06-17) on KDE/Wayland: launched `python -m tea_clipper.ui` and
+  confirmed the "up to date" path (no dialog at `v0.1.0`). Merged to `main`. The forced-dialog
+  probe (temporarily lowering `__version__` to confirm the notes + 3 buttons) remains the way to
+  exercise the dialog UI if it changes.
 
 ## NEXT SESSION — handoff
 
-**State:** **feature-complete + released as `v0.1.0`** on `origin/main` (`2062a30`), suite **78
-passing** (`.venv/bin/pytest`). Installable via the AUR `PKGBUILD` (`makepkg -si`); also runs from
-a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`).
+**State:** **feature-complete**, suite **101 passing** (`.venv/bin/pytest`). Two post-`v0.1.0`
+features — **UI feedback** (toast + record-state sync) and **startup update check** — are merged
+to **local `main`** and **hardware-verified** (see their status sections above). ⚠️ **Local `main`
+is ahead of `origin/main` (`2062a30`) by these merges and is NOT pushed yet** — push when ready
+(first push may need to be interactive via KWallet; see `[[git-auth-kwallet]]`). The released tag
+is still `v0.1.0`; bump + re-tag if these go out as a release. Runs from a checkout
+(`python -m tea_clipper.ui` / `python -m tea_clipper`).
+
+**NEXT SESSION — planned work (two features):**
+1. **Microphone volume gate (noise gate).** Add a gate on the mic branch so quiet background noise
+   below a threshold is silenced. The mic enters the pipeline in `audio.build_audio_fragment` (one
+   `pipewiresrc target-object=<mic> … ! amix.` chain per device, mixed via `audiomixer name=amix`).
+   GStreamer ships no stock noise-gate element, so the likely approach is the **`audiodynamic`**
+   element in `mode=cutoff` (a downward gate that zeroes signal below `threshold`) inserted on the
+   mic chain before `amix.`, with the threshold exposed as a `Settings` field (and a UI control).
+   Brainstorm first (element choice + whether the gate is mic-only or post-mix; default mic-only).
+2. **Single-instance lock.** Prevent a second `tea-clipper` from launching — a second launch would
+   open a second screencast portal session + rolling buffer and fight over hotkeys. Implement a
+   process lock (e.g. a `QLockFile` / flock on `$XDG_RUNTIME_DIR/tea-clipper.lock`, or a D-Bus
+   single-instance name); on a second launch, **raise/focus the existing window via the tray** and
+   exit. Applies to both entrypoints (`tea_clipper.ui` and the headless `tea_clipper`). Brainstorm
+   the mechanism (QLockFile is simplest and cross-checkout; D-Bus activation is more KDE-native).
+
+**Other candidate work (lower priority):** finish the AUR push (below); a `tea-clipper-git` VCS
+package; remaining deferred polish (below).
 
 **AUR submission — prepared & standards-audited, push pending:** a ready-to-push AUR repo lives at
 `~/Projects/aur-tea-clipper/` (`PKGBUILD` + generated `.SRCINFO` + 0BSD `LICENSE` + `.gitignore`,
@@ -411,9 +433,6 @@ An ed25519 deploy key was generated at `~/.ssh/aur` (+ `~/.ssh/config` host entr
 (user-only):** register `~/.ssh/aur.pub` on the AUR account, then `cd ~/Projects/aur-tea-clipper
 && git push -u origin master`. On a future `pkgver` bump: edit `PKGBUILD`, `updpkgsums`, `makepkg --printsrcinfo >
 .SRCINFO`, commit, push.
-
-No milestone is in flight — next session is open. Candidate work: finish the AUR push; a
-`tea-clipper-git` VCS package; or pick up deferred polish below.
 
 **Deferred polish (optional, YAGNI):**
 - ~~Window Record button doesn't sync when recording is toggled via hotkey/tray~~ — **done**
