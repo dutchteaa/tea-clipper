@@ -337,6 +337,33 @@ plugin registry + VAAPI). Flatpak is the deferred option for cross-distro distri
   buffer isn't full yet; this is expected, not a bug.)
 - ✅ **Released:** GitHub Release `v0.1.0` (https://github.com/dutchteaa/tea-clipper/releases/tag/v0.1.0).
 
+## Status — UI feedback (clip-saved toast + record-state sync)
+
+Spec: `docs/superpowers/specs/2026-06-16-ui-feedback-design.md` · Plan:
+`docs/superpowers/plans/2026-06-16-ui-feedback.md`. Implemented (TDD, subagent-driven) on the
+`ui-feedback` branch (stacked on `main`). Routes engine events through the existing
+`Controller` callback → `EngineHost` Qt signal → UI pattern (same worker→main queued-signal
+path as `clip_saved`).
+
+- ✅ `Controller.recording_changed_cb` — fired **only** on a successful start/stop transition
+  (never when the recorder raises), so the UI never shows a state the engine didn't reach.
+  `build_controller` threads it through. Mirrors the existing `clip_saved_cb`/`_notify_saved`.
+- ✅ `EngineHost.recording_changed = Signal(bool)` — re-emits the callback as a thread-safe Qt
+  signal.
+- ✅ `MainWindow` Record button now reflects **engine truth**: switched from `toggled`-drives-
+  action to `clicked`-requests-toggle, with checked-state + label set only from
+  `recording_changed`. Because `QPushButton.clicked` doesn't fire on programmatic `setChecked`,
+  there's no feedback loop — **this fixes the latent staleness bug** (the deferred-polish item).
+- ✅ `TrayIcon` — clip-saved desktop **toast** (`showMessage("Clip saved", <basename>)`, covers
+  both instant clips and finished recordings since both fire `clip_saved`); the toggle menu
+  action relabels Start/Stop on `recording_changed` and toasts "Recording started" on start
+  (no toast on stop — the clip-saved toast already covers it, avoiding a double notification).
+- Suite **86 passing** (`.venv/bin/pytest`); new `tests/test_main_window.py` + `tests/test_tray.py`
+  plus extended controller/engine-host tests. Per-task spec+quality review and a final
+  integration review all passed.
+- ⏳ **Hardware verification pending** (Task 5): on KDE/Wayland, confirm hotkey/tray/button stay
+  in sync and the toasts appear while the window is hidden. (`python -m tea_clipper.ui`.)
+
 ## NEXT SESSION — handoff
 
 **State:** **feature-complete + released as `v0.1.0`** on `origin/main` (`2062a30`), suite **78
@@ -355,8 +382,8 @@ No milestone is in flight — next session is open. Candidate work: finish the A
 `tea-clipper-git` VCS package; or pick up deferred polish below.
 
 **Deferred polish (optional, YAGNI):**
-- Window Record button doesn't sync when recording is toggled via hotkey/tray (no
-  `recording_changed` signal yet).
+- ~~Window Record button doesn't sync when recording is toggled via hotkey/tray~~ — **done**
+  on the `ui-feedback` branch (see "Status — UI feedback" above).
 - "Configure shortcuts…" launches `systemsettings`; could instead call the GlobalShortcuts
   portal's `ConfigureShortcuts` D-Bus method through `HotkeyService`.
 - In-app log viewer; multi-monitor source picker; per-setting live apply (no restart).
