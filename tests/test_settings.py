@@ -46,3 +46,14 @@ def test_audio_devices_empty_means_no_audio(tmp_path: Path):
     cfg = tmp_path / "config.toml"
     s.save(cfg)
     assert Settings.load(cfg).audio_devices == []
+
+
+def test_skipped_update_version_default_is_empty():
+    assert Settings().skipped_update_version == ""
+
+
+def test_skipped_update_version_round_trip(tmp_path: Path):
+    s = Settings(skipped_update_version="v0.2.0")
+    cfg = tmp_path / "config.toml"
+    s.save(cfg)
+    assert Settings.load(cfg).skipped_update_version == "v0.2.0"

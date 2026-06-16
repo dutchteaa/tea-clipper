@@ -21,6 +21,7 @@ class Settings:
     output_dir: str = field(default_factory=lambda: str(Path.home() / "Videos" / "tea-clipper"))
     buffer_dir: str = field(default_factory=lambda: str(Path.home() / ".cache" / "tea-clipper" / "buffer"))
     source_restore_token: str = ""
+    skipped_update_version: str = ""   # release tag the user chose to skip
 
     def save(self, path: Path) -> None:
         path = Path(path)
