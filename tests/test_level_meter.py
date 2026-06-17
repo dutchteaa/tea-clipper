@@ -1,4 +1,5 @@
-from tea_clipper.ui.level_meter import db_to_fraction, peak_to_display_db
+from tea_clipper.audio import AudioDevice
+from tea_clipper.ui.level_meter import MicLevelMonitor, _build_monitor_launch, db_to_fraction, peak_to_display_db
 
 
 def test_peak_empty_returns_floor():
@@ -25,3 +26,32 @@ def test_fraction_midpoint():
 def test_fraction_clamped():
     assert db_to_fraction(-100.0) == 0.0
     assert db_to_fraction(12.0) == 1.0
+
+
+def _mic(name):
+    return AudioDevice(name, name, is_monitor=False, is_default=False)
+
+
+def test_monitor_launch_none_without_mics():
+    assert _build_monitor_launch([]) is None
+
+
+def test_monitor_launch_builds_level_pipeline():
+    launch = _build_monitor_launch([_mic("mic.a")])
+    assert "pipewiresrc target-object=mic.a" in launch
+    assert "level" in launch
+    assert "post-messages=true" in launch
+    assert "audiomixer name=amix" in launch
+
+
+def test_monitor_launch_one_chain_per_mic():
+    launch = _build_monitor_launch([_mic("mic.a"), _mic("mic.b")])
+    assert launch.count("pipewiresrc") == 2
+
+
+def test_monitor_start_is_noop_without_mics(qapp):
+    # No mics -> launch is None -> start()/stop() must not raise and must not build a pipeline.
+    mon = MicLevelMonitor([])
+    mon.start()
+    assert mon._pipeline is None
+    mon.stop()
