@@ -128,6 +128,14 @@ class MainWindow(QMainWindow):
         Path(out).mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(out))
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._form.start_metering()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self._form.stop_metering()
+
     def closeEvent(self, event) -> None:
         # Hide to tray instead of quitting; capture keeps running.
         event.ignore()
