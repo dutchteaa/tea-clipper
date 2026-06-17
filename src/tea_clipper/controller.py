@@ -110,6 +110,7 @@ def build_controller(settings, portal=None, clip_saved_cb=None, recording_change
         build_audio_fragment,
         discover_audio_devices,
         resolve_audio_devices,
+        resolve_gate_threshold,
     )
     from tea_clipper.encoders import EncoderRegistry
     from tea_clipper.manual_recorder import ManualRecorder
@@ -121,7 +122,7 @@ def build_controller(settings, portal=None, clip_saved_cb=None, recording_change
         portal = PortalManager(settings)
     video = portal.open()
     devices = resolve_audio_devices(settings, discover_audio_devices())
-    audio = build_audio_fragment(devices)
+    audio = build_audio_fragment(devices, gate_threshold=resolve_gate_threshold(settings))
     spec = EncoderRegistry().resolve(
         settings.codec, hardware=settings.hardware, bitrate_kbps=settings.bitrate_kbps,
         fps=settings.fps, segment_seconds=settings.segment_seconds,
