@@ -22,6 +22,8 @@ class Settings:
     buffer_dir: str = field(default_factory=lambda: str(Path.home() / ".cache" / "tea-clipper" / "buffer"))
     source_restore_token: str = ""
     skipped_update_version: str = ""   # release tag the user chose to skip
+    mic_noise_gate_enabled: bool = False
+    mic_noise_gate_db: float = -40.0   # gate threshold in dBFS (applied to mic chains)
 
     def save(self, path: Path) -> None:
         path = Path(path)
