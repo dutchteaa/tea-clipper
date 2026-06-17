@@ -1,5 +1,5 @@
 from tea_clipper.audio import AudioDevice
-from tea_clipper.ui.level_meter import MicLevelMonitor, _build_monitor_launch, db_to_fraction, peak_to_display_db
+from tea_clipper.ui.level_meter import LevelMeterBar, MicLevelMonitor, _build_monitor_launch, db_to_fraction, peak_to_display_db
 
 
 def test_peak_empty_returns_floor():
@@ -55,3 +55,15 @@ def test_monitor_start_is_noop_without_mics(qapp):
     mon.start()
     assert mon._pipeline is None
     mon.stop()
+
+
+def test_meter_bar_stores_level(qapp):
+    bar = LevelMeterBar()
+    bar.set_level(-18.0)
+    assert bar._level_db == -18.0
+
+
+def test_meter_bar_stores_threshold(qapp):
+    bar = LevelMeterBar()
+    bar.set_threshold(-35.0)
+    assert bar._threshold_db == -35.0

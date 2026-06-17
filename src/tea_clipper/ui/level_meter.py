@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QWidget
 
 from tea_clipper.audio import AudioDevice
 
@@ -102,3 +104,42 @@ class MicLevelMonitor(QObject):
                 peaks = list(st.get_value("peak") or [])
                 self.level_changed.emit(peak_to_display_db(peaks))
             msg = bus.pop_filtered(Gst.MessageType.ELEMENT)
+
+
+class LevelMeterBar(QWidget):
+    """Horizontal bar: live mic level fill + a marker line at the gate threshold.
+
+    The region left of the marker reads as "would be gated" (greyed). Scale is fixed
+    at [-60, 0] dB to match the meter helpers' defaults.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._level_db = -60.0
+        self._threshold_db = -40.0
+        self.setMinimumHeight(18)
+
+    def set_level(self, db: float) -> None:
+        self._level_db = db
+        self.update()
+
+    def set_threshold(self, db: float) -> None:
+        self._threshold_db = db
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        painter = QPainter(self)
+        w, h = self.width(), self.height()
+        painter.fillRect(0, 0, w, h, QColor("#222"))
+
+        level_x = int(db_to_fraction(self._level_db) * w)
+        thr_x = int(db_to_fraction(self._threshold_db) * w)
+
+        # Filled level: greyed below threshold ("gated"), green above.
+        painter.fillRect(0, 0, min(level_x, thr_x), h, QColor("#555"))
+        if level_x > thr_x:
+            painter.fillRect(thr_x, 0, level_x - thr_x, h, QColor("#2e9e2e"))
+
+        # Threshold marker line.
+        painter.fillRect(max(thr_x - 1, 0), 0, 2, h, QColor("#e0a800"))
+        painter.end()
