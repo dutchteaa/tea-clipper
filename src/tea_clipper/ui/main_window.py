@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         host.clip_saved.connect(self._on_clip_saved)
         host.recording_changed.connect(self._on_recording_changed)
         self._on_state(host.state, "")
+        QApplication.instance().aboutToQuit.connect(self._form.stop_metering)
 
     def _on_state(self, state: str, detail: str) -> None:
         color = _STATE_COLORS.get(state, "#888")

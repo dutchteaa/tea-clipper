@@ -55,3 +55,15 @@ def test_show_starts_and_hide_stops_metering(qapp, monkeypatch):
     win.showEvent(QShowEvent())
     win.hideEvent(QHideEvent())
     assert calls == ["start", "stop"]
+
+
+def test_about_to_quit_stops_metering(qapp, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    import tea_clipper.ui.main_window as mw
+    calls = []
+
+    monkeypatch.setattr(mw.SettingsForm, "stop_metering", lambda self: calls.append("stop"))
+
+    win = MainWindow(FakeHost(), Settings())  # noqa: F841 (keep reference alive)
+    QApplication.instance().aboutToQuit.emit()
+    assert calls == ["stop"]
