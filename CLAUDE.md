@@ -398,24 +398,57 @@ would fight pacman). GUI only — the headless daemon is untouched.
   probe (temporarily lowering `__version__` to confirm the notes + 3 buttons) remains the way to
   exercise the dialog UI if it changes.
 
+## Status — mic noise gate + live input meter
+
+Spec: `docs/superpowers/specs/2026-06-17-noise-gate-design.md` · Plan:
+`docs/superpowers/plans/2026-06-17-noise-gate.md`. Implemented (TDD, subagent-driven) on the
+`noise-gate` branch (stacked on `main`). Silences quiet background noise on the **mic** chain(s)
+below a user-set dB threshold; desktop audio and above-threshold speech pass through untouched.
+
+- ✅ **Engine mechanism — `audiodynamic mode=expander ratio=2`.** GStreamer has **no `cutoff`
+  mode** (the old handoff guessed wrong); the real modes are `compressor`/`expander`. A downward
+  gate is `mode=expander` with `ratio≥2` (empirically: below-threshold → ~−91 dB, above → untouched;
+  `ratio=2` fully gates, higher adds nothing). `threshold` is **linear amplitude 0–1** (NOT dB);
+  `threshold=0` = off. dB↔linear: `linear = 10 ** (db/20)`.
+- ✅ `Settings.mic_noise_gate_enabled: bool = False` + `mic_noise_gate_db: float = -40.0` (forward-
+  compatible — `load` drops unknown keys).
+- ✅ `audio.gate_threshold_linear(db)` + `audio.resolve_gate_threshold(settings)` (pure, unit-tested);
+  `build_audio_fragment(devices, gate_threshold=…)` inserts the gate **mic-only**
+  (`not is_monitor`), after `audioconvert`. Sinks and the `gate_threshold==0` case are byte-for-byte
+  unchanged. `build_controller` passes `resolve_gate_threshold(settings)`.
+- ✅ **Live mic meter** (`ui/level_meter.py`): `peak_to_display_db` + `db_to_fraction` (pure,
+  unit-tested); `MicLevelMonitor(QObject)` runs a standalone
+  `pipewiresrc … ! audioconvert ! level` pipeline polled by a Qt `QTimer` (NO GLib loop; gi imports
+  are lazy so the no-mic path stays headless-importable) and emits `level_changed(peak_db)`;
+  `LevelMeterBar(QWidget)` paints the live level + an amber gate-threshold marker (region below =
+  greyed "would be gated"). The monitor is a 2nd reader on the mic — fine, PipeWire allows it.
+- ✅ `SettingsForm` gains an "Enable noise gate (mic)" checkbox + dB spinbox (−60…−10) + the meter;
+  `load`/`collect` round-trip the two fields (preserving untouched fields). `MainWindow.showEvent`/
+  `hideEvent` run the meter **only while the window is visible**.
+- Suite **128 passing** (`.venv/bin/pytest`; was 101). New `tests/test_level_meter.py` + extended
+  audio/settings/settings-form/main-window tests. Per-task spec+quality reviews all passed.
+- ⚠️ **Hardware verification PENDING** — needs a human on the dev box (KDE/Wayland + a mic):
+  launch `python -m tea_clipper.ui`, confirm the **Mic level** bar tracks real input with the marker
+  at the spinbox dB; enable the gate, set the threshold just above idle noise, **Apply**, save a
+  silent-then-speech clip, and check with
+  `ffmpeg -i <clip> -af volumedetect -f null /dev/null` that the silent stretch reads near the gate
+  floor (≈ −91 dB) while speech passes normally. Live GStreamer/PipeWire metering can't be unit-
+  tested (the project's pure-vs-probe split). Not yet merged to `main`.
+
 ## NEXT SESSION — handoff
 
-**State:** **feature-complete**, suite **101 passing** (`.venv/bin/pytest`). Two post-`v0.1.0`
-features — **UI feedback** (toast + record-state sync) and **startup update check** — are merged
-to **local `main`** and **hardware-verified** (see their status sections above). ⚠️ **Local `main`
-is ahead of `origin/main` (`2062a30`) by these merges and is NOT pushed yet** — push when ready
-(first push may need to be interactive via KWallet; see `[[git-auth-kwallet]]`). The released tag
-is still `v0.1.0`; bump + re-tag if these go out as a release. Runs from a checkout
-(`python -m tea_clipper.ui` / `python -m tea_clipper`).
+**State:** suite **128 passing** (`.venv/bin/pytest`). The **mic noise gate + live input meter**
+feature is complete on the `noise-gate` branch (stacked on `main`), all per-task reviews clean, but
+⚠️ **hardware verification is still pending** (see its status section above) and it is **not yet
+merged**. The two earlier post-`v0.1.0` features — **UI feedback** and **startup update check** —
+are merged to **local `main`** and hardware-verified. ⚠️ **Local `main` is ahead of `origin/main`
+(`2062a30`) and NOT pushed yet** — push when ready (first push may need to be interactive via
+KWallet; see `[[git-auth-kwallet]]`). The released tag is still `v0.1.0`; bump + re-tag if these go
+out as a release. Runs from a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`).
 
-**NEXT SESSION — planned work (two features):**
-1. **Microphone volume gate (noise gate).** Add a gate on the mic branch so quiet background noise
-   below a threshold is silenced. The mic enters the pipeline in `audio.build_audio_fragment` (one
-   `pipewiresrc target-object=<mic> … ! amix.` chain per device, mixed via `audiomixer name=amix`).
-   GStreamer ships no stock noise-gate element, so the likely approach is the **`audiodynamic`**
-   element in `mode=cutoff` (a downward gate that zeroes signal below `threshold`) inserted on the
-   mic chain before `amix.`, with the threshold exposed as a `Settings` field (and a UI control).
-   Brainstorm first (element choice + whether the gate is mic-only or post-mix; default mic-only).
+**NEXT SESSION — planned work:**
+1. ~~**Microphone volume gate (noise gate).**~~ — **done** on the `noise-gate` branch (see "Status —
+   mic noise gate" above); hardware-verify + merge.
 2. **Single-instance lock.** Prevent a second `tea-clipper` from launching — a second launch would
    open a second screencast portal session + rolling buffer and fight over hotkeys. Implement a
    process lock (e.g. a `QLockFile` / flock on `$XDG_RUNTIME_DIR/tea-clipper.lock`, or a D-Bus
