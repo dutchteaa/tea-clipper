@@ -31,6 +31,11 @@ DESKTOP_TOKEN = "@desktop@"
 MIC_TOKEN = "@mic@"
 
 
+def gate_threshold_linear(db: float) -> float:
+    """Convert a dBFS gate threshold to a linear amplitude in [0.0, 1.0]."""
+    return min(1.0, max(0.0, 10 ** (db / 20)))
+
+
 @dataclass
 class AudioDevice:
     node_name: str          # stable PipeWire node.name; the identifier stored in config
@@ -39,31 +44,38 @@ class AudioDevice:
     is_default: bool        # True = system default for its kind
 
 
-def _device_fragment(device: AudioDevice) -> str:
+def _device_fragment(device: AudioDevice, gate_threshold: float = 0.0) -> str:
     """One ``pipewiresrc`` capture chain feeding the shared ``audiomixer``.
 
     Desktop (sink) devices need ``stream.capture.sink=true`` so pipewiresrc taps the sink's
-    monitor ports rather than treating it as a (silent) regular source.
+    monitor ports rather than treating it as a (silent) regular source. Mic (source) chains
+    get a downward noise gate (``audiodynamic mode=expander``) when ``gate_threshold > 0``.
     """
     props = ""
     if device.is_monitor:
         props = ' stream-properties="props,stream.capture.sink=true"'
+    gate = ""
+    if not device.is_monitor and gate_threshold > 0:
+        gate = f"audiodynamic mode=expander threshold={gate_threshold:.6f} ratio=2 ! "
     return (
         f"pipewiresrc target-object={device.node_name}{props} ! "
-        "audioconvert ! audioresample ! queue ! amix."
+        f"audioconvert ! {gate}audioresample ! queue ! amix."
     )
 
 
-def build_audio_fragment(devices: list[AudioDevice]) -> str | None:
+def build_audio_fragment(
+    devices: list[AudioDevice], gate_threshold: float = 0.0
+) -> str | None:
     """Capture each device and mix them via ``audiomixer``; ``None`` if no devices.
 
+    ``gate_threshold`` (linear amplitude, 0.0 = off) applies a noise gate to mic chains only.
     The returned fragment ends in ``queue name=aenc_in`` so the pipeline can append
     ``! opusenc ! replaymux.audio_0`` exactly as it does for the test source. The mixer
     output is pinned to stereo so a mono mic doesn't collapse desktop audio to mono.
     """
     if not devices:
         return None
-    chains = [_device_fragment(d) for d in devices]
+    chains = [_device_fragment(d, gate_threshold) for d in devices]
     chains.append(
         "audiomixer name=amix ! audioconvert ! audioresample ! "
         "audio/x-raw,channels=2 ! queue name=aenc_in"
@@ -73,6 +85,15 @@ def build_audio_fragment(devices: list[AudioDevice]) -> str | None:
 
 class _SettingsLike(Protocol):
     audio_devices: list[str]
+    mic_noise_gate_enabled: bool
+    mic_noise_gate_db: float
+
+
+def resolve_gate_threshold(settings: _SettingsLike) -> float:
+    """Linear gate threshold from settings; 0.0 when the gate is disabled."""
+    if not settings.mic_noise_gate_enabled:
+        return 0.0
+    return gate_threshold_linear(settings.mic_noise_gate_db)
 
 
 def resolve_audio_devices(
