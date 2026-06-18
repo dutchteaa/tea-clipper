@@ -422,12 +422,21 @@ below a user-set dB threshold; desktop audio and above-threshold speech pass thr
   are lazy so the no-mic path stays headless-importable) and emits `level_changed(peak_db)`;
   `LevelMeterBar(QWidget)` paints the live level + an amber gate-threshold marker (region below =
   greyed "would be gated"). The monitor is a 2nd reader on the mic — fine, PipeWire allows it.
+  **Visibility fix (commit `3051d8e`):** the first cut drew a borderless `#222` track that blended
+  into the dark KDE Breeze window background, so the **Mic level** row looked empty ("no bar/widget
+  at all"). Now drawn as a bordered, inset well (mid-grey border, higher-contrast grey/green fills,
+  2px amber marker, min size 160×22 Expanding/Fixed) so the bar's extent is always legible even with
+  no signal. Verified by offscreen `host.grab()` PNG renders (idle = border+marker only; signal =
+  grey-below + green-above).
 - ✅ `SettingsForm` gains an "Enable noise gate (mic)" checkbox + dB spinbox (−60…−10) + the meter;
   `load`/`collect` round-trip the two fields (preserving untouched fields). `MainWindow.showEvent`/
   `hideEvent` run the meter **only while the window is visible**.
-- Suite **128 passing** (`.venv/bin/pytest`; was 101). New `tests/test_level_meter.py` + extended
+- Suite **129 passing** (`.venv/bin/pytest`; was 101). New `tests/test_level_meter.py` + extended
   audio/settings/settings-form/main-window tests. Per-task spec+quality reviews all passed.
-- ⚠️ **Hardware verification PENDING** — needs a human on the dev box (KDE/Wayland + a mic):
+- ⚠️ **Hardware verification PENDING** — needs a human on the dev box (KDE/Wayland + a mic).
+  Note: the earlier "Mic level shows nothing" report was the visibility bug above, now fixed
+  (`3051d8e`) and confirmed visible via offscreen PNG; the live-tracking + gate-silencing checks
+  below still need real hardware. Steps:
   launch `python -m tea_clipper.ui`, confirm the **Mic level** bar tracks real input with the marker
   at the spinbox dB; enable the gate, set the threshold just above idle noise, **Apply**, save a
   silent-then-speech clip, and check with
@@ -437,9 +446,11 @@ below a user-set dB threshold; desktop audio and above-threshold speech pass thr
 
 ## NEXT SESSION — handoff
 
-**State:** suite **128 passing** (`.venv/bin/pytest`). The **mic noise gate + live input meter**
-feature is complete on the `noise-gate` branch (stacked on `main`), all per-task reviews clean, but
-⚠️ **hardware verification is still pending** (see its status section above) and it is **not yet
+**State:** suite **129 passing** (`.venv/bin/pytest`). The **mic noise gate + live input meter**
+feature is complete on the `noise-gate` branch (stacked on `main`), all per-task reviews clean, plus
+a follow-up **meter-visibility fix** (`3051d8e`: the bar was invisible on the dark theme — now
+bordered/high-contrast, confirmed via offscreen render). ⚠️ **Hardware verification is still pending**
+(live mic tracking + gate-silencing a real clip — see its status section above) and it is **not yet
 merged**. The two earlier post-`v0.1.0` features — **UI feedback** and **startup update check** —
 are merged to **local `main`** and hardware-verified. ⚠️ **Local `main` is ahead of `origin/main`
 (`2062a30`) and NOT pushed yet** — push when ready (first push may need to be interactive via
