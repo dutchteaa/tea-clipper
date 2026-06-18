@@ -12,7 +12,7 @@ import logging
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from tea_clipper.audio import AudioDevice
 
@@ -109,15 +109,25 @@ class MicLevelMonitor(QObject):
 class LevelMeterBar(QWidget):
     """Horizontal bar: live mic level fill + a marker line at the gate threshold.
 
-    The region left of the marker reads as "would be gated" (greyed). Scale is fixed
-    at [-60, 0] dB to match the meter helpers' defaults.
+    Drawn as a bordered, inset track so the meter area stays visible on any desktop
+    theme even when empty (a borderless dark bar blends into a dark window background).
+    The region left of the marker reads as "would be gated" (grey); past it is green
+    ("passes"). Scale is fixed at [-60, 0] dB to match the meter helpers' defaults.
     """
+
+    _TRACK = QColor("#15171a")     # inset well, distinct from typical window backgrounds
+    _BORDER = QColor("#6b7079")    # mid grey: visible on both light and dark themes
+    _BELOW = QColor("#8a8f98")     # signal below threshold (would be gated)
+    _ABOVE = QColor("#3fb950")     # signal above threshold (passes)
+    _MARKER = QColor("#f0a000")    # gate-threshold marker
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._level_db = -60.0
         self._threshold_db = -40.0
-        self.setMinimumHeight(18)
+        self.setMinimumHeight(22)
+        self.setMinimumWidth(160)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def set_level(self, db: float) -> None:
         self._level_db = db
@@ -130,16 +140,22 @@ class LevelMeterBar(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
         painter = QPainter(self)
         w, h = self.width(), self.height()
-        painter.fillRect(0, 0, w, h, QColor("#222"))
+        painter.fillRect(0, 0, w, h, self._TRACK)
 
-        level_x = int(db_to_fraction(self._level_db) * w)
-        thr_x = int(db_to_fraction(self._threshold_db) * w)
+        inner_w = max(w - 2, 0)
+        inner_h = max(h - 2, 0)
+        level_x = int(db_to_fraction(self._level_db) * inner_w)
+        thr_x = int(db_to_fraction(self._threshold_db) * inner_w)
 
-        # Filled level: greyed below threshold ("gated"), green above.
-        painter.fillRect(0, 0, min(level_x, thr_x), h, QColor("#555"))
+        # Filled level: grey below threshold ("gated"), green above ("passes").
+        painter.fillRect(1, 1, min(level_x, thr_x), inner_h, self._BELOW)
         if level_x > thr_x:
-            painter.fillRect(thr_x, 0, level_x - thr_x, h, QColor("#2e9e2e"))
+            painter.fillRect(1 + thr_x, 1, level_x - thr_x, inner_h, self._ABOVE)
 
         # Threshold marker line.
-        painter.fillRect(max(thr_x - 1, 0), 0, 2, h, QColor("#e0a800"))
+        painter.fillRect(1 + max(thr_x - 1, 0), 1, 2, inner_h, self._MARKER)
+
+        # Border last so the meter's extent is always legible.
+        painter.setPen(self._BORDER)
+        painter.drawRect(0, 0, w - 1, h - 1)
         painter.end()
