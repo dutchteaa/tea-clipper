@@ -2,8 +2,7 @@
 
 Pure helpers (``peak_to_display_db``, ``db_to_fraction``) are unit-tested.
 ``MicLevelMonitor`` runs a standalone ``pipewiresrc … ! level`` pipeline polled from a
-Qt timer (no GLib loop) and is probe-verified. ``LevelMeterBar`` paints the live level
-plus the gate-threshold marker.
+Qt timer (no GLib loop) and is probe-verified. ``LevelMeterBar`` paints the live level.
 """
 
 from __future__ import annotations
@@ -107,34 +106,28 @@ class MicLevelMonitor(QObject):
 
 
 class LevelMeterBar(QWidget):
-    """Horizontal bar: live mic level fill + a marker line at the gate threshold.
+    """Horizontal bar showing the live mic input level.
 
     Drawn as a bordered, inset track so the meter area stays visible on any desktop
     theme even when empty (a borderless dark bar blends into a dark window background).
-    The region left of the marker reads as "would be gated" (grey); past it is green
-    ("passes"). Scale is fixed at [-60, 0] dB to match the meter helpers' defaults.
+    The fill is green and grows with the input level. Scale is fixed at [-60, 0] dB to
+    match the meter helpers' defaults. (Noise suppression is adaptive, so there is no
+    threshold marker to draw — the meter is purely "is my mic live and how loud".)
     """
 
     _TRACK = QColor("#15171a")     # inset well, distinct from typical window backgrounds
     _BORDER = QColor("#6b7079")    # mid grey: visible on both light and dark themes
-    _BELOW = QColor("#8a8f98")     # signal below threshold (would be gated)
-    _ABOVE = QColor("#3fb950")     # signal above threshold (passes)
-    _MARKER = QColor("#f0a000")    # gate-threshold marker
+    _FILL = QColor("#3fb950")      # live level fill
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._level_db = -60.0
-        self._threshold_db = -40.0
         self.setMinimumHeight(22)
         self.setMinimumWidth(160)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def set_level(self, db: float) -> None:
         self._level_db = db
-        self.update()
-
-    def set_threshold(self, db: float) -> None:
-        self._threshold_db = db
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt override)
@@ -145,15 +138,7 @@ class LevelMeterBar(QWidget):
         inner_w = max(w - 2, 0)
         inner_h = max(h - 2, 0)
         level_x = int(db_to_fraction(self._level_db) * inner_w)
-        thr_x = int(db_to_fraction(self._threshold_db) * inner_w)
-
-        # Filled level: grey below threshold ("gated"), green above ("passes").
-        painter.fillRect(1, 1, min(level_x, thr_x), inner_h, self._BELOW)
-        if level_x > thr_x:
-            painter.fillRect(1 + thr_x, 1, level_x - thr_x, inner_h, self._ABOVE)
-
-        # Threshold marker line.
-        painter.fillRect(1 + max(thr_x - 1, 0), 1, 2, inner_h, self._MARKER)
+        painter.fillRect(1, 1, level_x, inner_h, self._FILL)
 
         # Border last so the meter's extent is always legible.
         painter.setPen(self._BORDER)

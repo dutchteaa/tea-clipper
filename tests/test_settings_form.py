@@ -45,26 +45,26 @@ def test_unknown_codec_in_settings_is_selectable(qapp):
     assert form.collect().codec == "av1"
 
 
-def test_noise_gate_round_trip(qapp):
-    s = Settings(mic_noise_gate_enabled=True, mic_noise_gate_db=-30.0)
+def test_noise_suppression_round_trip(qapp):
+    s = Settings(mic_noise_suppression_enabled=True, mic_noise_suppression_level="very-high")
     form = _form()
     form.load(s)
     out = form.collect()
-    assert out.mic_noise_gate_enabled is True
-    assert out.mic_noise_gate_db == -30.0
+    assert out.mic_noise_suppression_enabled is True
+    assert out.mic_noise_suppression_level == "very-high"
 
 
-def test_gate_db_disabled_when_gate_off(qapp):
-    s = Settings(mic_noise_gate_enabled=False)
+def test_suppression_level_disabled_when_suppression_off(qapp):
+    s = Settings(mic_noise_suppression_enabled=False)
     form = _form()
     form.load(s)
-    assert form.gate_db.isEnabled() is False
+    assert form.suppression_level.isEnabled() is False
 
 
-def test_threshold_marker_follows_spinbox(qapp):
+def test_suppression_level_combo_has_webrtc_levels(qapp):
     form = _form()
-    form.gate_db.setValue(-25)
-    assert form.meter._threshold_db == -25.0
+    items = [form.suppression_level.itemText(i) for i in range(form.suppression_level.count())]
+    assert items == ["low", "moderate", "high", "very-high"]
 
 
 def test_start_metering_uses_factory(qapp):

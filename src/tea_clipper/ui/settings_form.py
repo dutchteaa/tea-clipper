@@ -13,7 +13,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from tea_clipper.audio import AudioDevice, discover_audio_devices, resolve_audio_devices
+from tea_clipper.audio import (
+    NOISE_SUPPRESSION_LEVELS,
+    AudioDevice,
+    discover_audio_devices,
+    resolve_audio_devices,
+)
 from tea_clipper.settings import Settings
 from tea_clipper.ui.audio_picker import AudioPicker
 from tea_clipper.ui.level_meter import LevelMeterBar, MicLevelMonitor
@@ -58,15 +63,12 @@ class SettingsForm(QWidget):
         self.output_dir = QLineEdit(self._base.output_dir)
         self.audio = AudioPicker(devices=devices)
 
-        self.gate_enabled = QCheckBox("Enable noise gate (mic)")
-        self.gate_db = _spin(-60, -10, int(round(self._base.mic_noise_gate_db)))
+        self.suppression_enabled = QCheckBox("Suppress background noise (mic)")
+        self.suppression_level = QComboBox()
+        self.suppression_level.addItems(NOISE_SUPPRESSION_LEVELS)
         self.meter = LevelMeterBar()
-        self.gate_enabled.toggled.connect(self.gate_db.setEnabled)
-        self.gate_db.valueChanged.connect(
-            lambda v: self.meter.set_threshold(float(v))
-        )
-        self.gate_db.setEnabled(self.gate_enabled.isChecked())
-        self.meter.set_threshold(float(self.gate_db.value()))
+        self.suppression_enabled.toggled.connect(self.suppression_level.setEnabled)
+        self.suppression_level.setEnabled(self.suppression_enabled.isChecked())
 
         layout = QFormLayout(self)
         layout.addRow("Clip length (s)", self.clip_length)
@@ -76,8 +78,8 @@ class SettingsForm(QWidget):
         layout.addRow("FPS", self.fps)
         layout.addRow("Output folder", self.output_dir)
         layout.addRow("Audio sources", self.audio)
-        layout.addRow("", self.gate_enabled)
-        layout.addRow("Gate threshold (dB)", self.gate_db)
+        layout.addRow("", self.suppression_enabled)
+        layout.addRow("Suppression level", self.suppression_level)
         layout.addRow("Mic level", self.meter)
 
     def _select_codec(self, codec: str) -> None:
@@ -86,6 +88,10 @@ class SettingsForm(QWidget):
             self.codec.addItem(codec)
             idx = self.codec.findText(codec)
         self.codec.setCurrentIndex(idx)
+
+    def _select_suppression_level(self, level: str) -> None:
+        idx = self.suppression_level.findText(level)
+        self.suppression_level.setCurrentIndex(max(idx, 0))
 
     def load(self, settings: Settings) -> None:
         self._base = settings
@@ -96,10 +102,9 @@ class SettingsForm(QWidget):
         self.fps.setValue(settings.fps)
         self.output_dir.setText(settings.output_dir)
         self.audio.set_selection(settings.audio_devices)
-        self.gate_enabled.setChecked(settings.mic_noise_gate_enabled)
-        self.gate_db.setValue(int(round(settings.mic_noise_gate_db)))
-        self.gate_db.setEnabled(settings.mic_noise_gate_enabled)
-        self.meter.set_threshold(float(self.gate_db.value()))
+        self.suppression_enabled.setChecked(settings.mic_noise_suppression_enabled)
+        self._select_suppression_level(settings.mic_noise_suppression_level)
+        self.suppression_level.setEnabled(settings.mic_noise_suppression_enabled)
 
     def collect(self) -> Settings:
         return replace(
@@ -111,8 +116,8 @@ class SettingsForm(QWidget):
             fps=self.fps.value(),
             output_dir=self.output_dir.text(),
             audio_devices=self.audio.selected_entries(),
-            mic_noise_gate_enabled=self.gate_enabled.isChecked(),
-            mic_noise_gate_db=float(self.gate_db.value()),
+            mic_noise_suppression_enabled=self.suppression_enabled.isChecked(),
+            mic_noise_suppression_level=self.suppression_level.currentText(),
         )
 
     def start_metering(self) -> None:

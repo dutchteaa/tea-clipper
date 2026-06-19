@@ -61,9 +61,3 @@ def test_meter_bar_stores_level(qapp):
     bar = LevelMeterBar()
     bar.set_level(-18.0)
     assert bar._level_db == -18.0
-
-
-def test_meter_bar_stores_threshold(qapp):
-    bar = LevelMeterBar()
-    bar.set_threshold(-35.0)
-    assert bar._threshold_db == -35.0

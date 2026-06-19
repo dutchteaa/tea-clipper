@@ -1,10 +1,10 @@
 from tea_clipper.audio import (
+    NOISE_SUPPRESSION_LEVELS,
     AudioDevice,
     _parse_pactl_devices,
     build_audio_fragment,
-    gate_threshold_linear,
     resolve_audio_devices,
-    resolve_gate_threshold,
+    resolve_noise_suppression,
 )
 
 
@@ -189,52 +189,57 @@ def test_parse_empty_output():
     assert _parse_pactl_devices("", "", default_sink=None, default_source=None) == []
 
 
-# --- gate_threshold_linear / resolve_gate_threshold / gate insertion -----------
+# --- resolve_noise_suppression / webrtcdsp insertion ---------------------------
 
 
-def test_gate_threshold_linear_known_points():
-    assert gate_threshold_linear(0.0) == 1.0
-    assert abs(gate_threshold_linear(-40.0) - 0.01) < 1e-6
-    assert abs(gate_threshold_linear(-20.0) - 0.1) < 1e-6
-
-
-def test_gate_threshold_linear_clamped():
-    assert gate_threshold_linear(60.0) == 1.0        # never above 1.0
-    assert gate_threshold_linear(-1000.0) >= 0.0     # never below 0.0
-
-
-def test_resolve_gate_threshold_disabled_is_zero():
+def _S_ns(enabled, level):
     s = _S([])
-    s.mic_noise_gate_enabled = False
-    s.mic_noise_gate_db = -40.0
-    assert resolve_gate_threshold(s) == 0.0
+    s.mic_noise_suppression_enabled = enabled
+    s.mic_noise_suppression_level = level
+    return s
 
 
-def test_resolve_gate_threshold_enabled_is_linear():
-    s = _S([])
-    s.mic_noise_gate_enabled = True
-    s.mic_noise_gate_db = -40.0
-    assert abs(resolve_gate_threshold(s) - 0.01) < 1e-6
+def test_resolve_noise_suppression_disabled_is_none():
+    assert resolve_noise_suppression(_S_ns(False, "high")) is None
 
 
-def test_gate_inserted_on_mic_chain_only():
-    frag = build_audio_fragment([_mic("mic.node")], gate_threshold=0.01)
-    assert "audiodynamic mode=expander" in frag
-    assert "ratio=2" in frag
+def test_resolve_noise_suppression_enabled_returns_level():
+    assert resolve_noise_suppression(_S_ns(True, "high")) == "high"
 
 
-def test_gate_not_inserted_on_sink_chain():
-    frag = build_audio_fragment([_sink("sink.node")], gate_threshold=0.01)
-    assert "audiodynamic" not in frag
+def test_resolve_noise_suppression_invalid_level_is_none():
+    # An out-of-range level string must not be passed to the element verbatim.
+    assert resolve_noise_suppression(_S_ns(True, "bogus")) is None
 
 
-def test_gate_absent_when_threshold_zero():
-    frag = build_audio_fragment([_mic("mic.node")], gate_threshold=0.0)
-    assert "audiodynamic" not in frag
+def test_known_levels_are_the_webrtcdsp_enum():
+    assert NOISE_SUPPRESSION_LEVELS == ("low", "moderate", "high", "very-high")
 
 
-def test_gate_only_on_mic_in_mixed_set():
+def test_suppression_inserted_on_mic_chain_only():
+    frag = build_audio_fragment([_mic("mic.node")], noise_suppression_level="high")
+    assert "webrtcdsp" in frag
+    assert "noise-suppression=true" in frag
+    assert "noise-suppression-level=high" in frag
+    # webrtcdsp requires S16LE at a supported rate pinned upstream
+    assert "format=S16LE" in frag
+    # AEC/AGC/VAD must be off (noise-suppression only; no echo probe present)
+    assert "echo-cancel=false" in frag
+
+
+def test_suppression_not_inserted_on_sink_chain():
+    frag = build_audio_fragment([_sink("sink.node")], noise_suppression_level="high")
+    assert "webrtcdsp" not in frag
+
+
+def test_suppression_absent_when_level_none():
+    frag = build_audio_fragment([_mic("mic.node")], noise_suppression_level=None)
+    assert "webrtcdsp" not in frag
+
+
+def test_suppression_only_on_mic_in_mixed_set():
     frag = build_audio_fragment(
-        [_sink("sink.node"), _mic("mic.node")], gate_threshold=0.05
+        [_sink("sink.node"), _mic("mic.node")], noise_suppression_level="very-high"
     )
-    assert frag.count("audiodynamic") == 1
+    assert frag.count("webrtcdsp") == 1
+    assert "noise-suppression-level=very-high" in frag

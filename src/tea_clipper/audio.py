@@ -30,10 +30,8 @@ log = logging.getLogger("tea_clipper")
 DESKTOP_TOKEN = "@desktop@"
 MIC_TOKEN = "@mic@"
 
-
-def gate_threshold_linear(db: float) -> float:
-    """Convert a dBFS gate threshold to a linear amplitude in [0.0, 1.0]."""
-    return min(1.0, max(0.0, 10 ** (db / 20)))
+# webrtcdsp's noise-suppression-level enum, weakest -> strongest.
+NOISE_SUPPRESSION_LEVELS = ("low", "moderate", "high", "very-high")
 
 
 @dataclass
@@ -44,38 +42,50 @@ class AudioDevice:
     is_default: bool        # True = system default for its kind
 
 
-def _device_fragment(device: AudioDevice, gate_threshold: float = 0.0) -> str:
+def _device_fragment(
+    device: AudioDevice, noise_suppression_level: str | None = None
+) -> str:
     """One ``pipewiresrc`` capture chain feeding the shared ``audiomixer``.
 
     Desktop (sink) devices need ``stream.capture.sink=true`` so pipewiresrc taps the sink's
     monitor ports rather than treating it as a (silent) regular source. Mic (source) chains
-    get a downward noise gate (``audiodynamic mode=expander``) when ``gate_threshold > 0``.
+    get WebRTC noise suppression (``webrtcdsp``) when ``noise_suppression_level`` is set —
+    an adaptive denoiser, not a hard gate, so above-threshold speech is preserved without the
+    per-sample chatter a ``audiodynamic`` expander produced. ``webrtcdsp`` only accepts S16LE
+    at 8/16/32/48 kHz, so the rate/format is pinned just upstream of it; AEC/AGC/VAD are off
+    (there is no echo probe — noise suppression only).
     """
     props = ""
     if device.is_monitor:
         props = ' stream-properties="props,stream.capture.sink=true"'
-    gate = ""
-    if not device.is_monitor and gate_threshold > 0:
-        gate = f"audiodynamic mode=expander threshold={gate_threshold:.6f} ratio=2 ! "
+    ns = ""
+    if not device.is_monitor and noise_suppression_level is not None:
+        ns = (
+            "audioresample ! audio/x-raw,format=S16LE,rate=48000 ! "
+            "webrtcdsp echo-cancel=false voice-detection=false gain-control=false "
+            f"noise-suppression=true noise-suppression-level={noise_suppression_level} ! "
+            "audioconvert ! "
+        )
     return (
         f"pipewiresrc target-object={device.node_name}{props} ! "
-        f"audioconvert ! {gate}audioresample ! queue ! amix."
+        f"audioconvert ! {ns}audioresample ! queue ! amix."
     )
 
 
 def build_audio_fragment(
-    devices: list[AudioDevice], gate_threshold: float = 0.0
+    devices: list[AudioDevice], noise_suppression_level: str | None = None
 ) -> str | None:
     """Capture each device and mix them via ``audiomixer``; ``None`` if no devices.
 
-    ``gate_threshold`` (linear amplitude, 0.0 = off) applies a noise gate to mic chains only.
-    The returned fragment ends in ``queue name=aenc_in`` so the pipeline can append
-    ``! opusenc ! replaymux.audio_0`` exactly as it does for the test source. The mixer
-    output is pinned to stereo so a mono mic doesn't collapse desktop audio to mono.
+    ``noise_suppression_level`` (a ``NOISE_SUPPRESSION_LEVELS`` value, or ``None`` = off)
+    applies WebRTC noise suppression to mic chains only. The returned fragment ends in
+    ``queue name=aenc_in`` so the pipeline can append ``! opusenc ! replaymux.audio_0``
+    exactly as it does for the test source. The mixer output is pinned to stereo so a mono
+    mic doesn't collapse desktop audio to mono.
     """
     if not devices:
         return None
-    chains = [_device_fragment(d, gate_threshold) for d in devices]
+    chains = [_device_fragment(d, noise_suppression_level) for d in devices]
     chains.append(
         "audiomixer name=amix ! audioconvert ! audioresample ! "
         "audio/x-raw,channels=2 ! queue name=aenc_in"
@@ -85,15 +95,21 @@ def build_audio_fragment(
 
 class _SettingsLike(Protocol):
     audio_devices: list[str]
-    mic_noise_gate_enabled: bool
-    mic_noise_gate_db: float
+    mic_noise_suppression_enabled: bool
+    mic_noise_suppression_level: str
 
 
-def resolve_gate_threshold(settings: _SettingsLike) -> float:
-    """Linear gate threshold from settings; 0.0 when the gate is disabled."""
-    if not settings.mic_noise_gate_enabled:
-        return 0.0
-    return gate_threshold_linear(settings.mic_noise_gate_db)
+def resolve_noise_suppression(settings: _SettingsLike) -> str | None:
+    """The mic noise-suppression level from settings, or ``None`` when off/invalid."""
+    if not settings.mic_noise_suppression_enabled:
+        return None
+    if settings.mic_noise_suppression_level not in NOISE_SUPPRESSION_LEVELS:
+        log.warning(
+            "unknown noise-suppression level %r; disabling suppression",
+            settings.mic_noise_suppression_level,
+        )
+        return None
+    return settings.mic_noise_suppression_level
 
 
 def resolve_audio_devices(

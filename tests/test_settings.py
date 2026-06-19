@@ -59,16 +59,16 @@ def test_skipped_update_version_round_trip(tmp_path: Path):
     assert Settings.load(cfg).skipped_update_version == "v0.2.0"
 
 
-def test_noise_gate_defaults():
+def test_noise_suppression_defaults():
     s = Settings()
-    assert s.mic_noise_gate_enabled is False
-    assert s.mic_noise_gate_db == -40.0
+    assert s.mic_noise_suppression_enabled is False
+    assert s.mic_noise_suppression_level == "high"
 
 
-def test_noise_gate_round_trip(tmp_path: Path):
-    s = Settings(mic_noise_gate_enabled=True, mic_noise_gate_db=-32.0)
+def test_noise_suppression_round_trip(tmp_path: Path):
+    s = Settings(mic_noise_suppression_enabled=True, mic_noise_suppression_level="very-high")
     cfg = tmp_path / "config.toml"
     s.save(cfg)
     loaded = Settings.load(cfg)
-    assert loaded.mic_noise_gate_enabled is True
-    assert loaded.mic_noise_gate_db == -32.0
+    assert loaded.mic_noise_suppression_enabled is True
+    assert loaded.mic_noise_suppression_level == "very-high"

@@ -16,6 +16,7 @@ depends=(
   'gst-plugin-pipewire'
   'gst-plugin-va'      # VAAPI encode on AMD/Intel (vah264enc etc.)
   'gst-plugins-ugly'   # x264enc software-encode fallback
+  'gst-plugins-bad'    # webrtcdsp mic noise suppression
   'pyside6'
   'ffmpeg'             # lossless clip stitching (-c copy)
   'libpulse'           # provides pactl for audio-device discovery

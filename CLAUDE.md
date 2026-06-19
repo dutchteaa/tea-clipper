@@ -398,68 +398,93 @@ would fight pacman). GUI only — the headless daemon is untouched.
   probe (temporarily lowering `__version__` to confirm the notes + 3 buttons) remains the way to
   exercise the dialog UI if it changes.
 
-## Status — mic noise gate + live input meter
+## Status — mic noise suppression + live input meter
 
 Spec: `docs/superpowers/specs/2026-06-17-noise-gate-design.md` · Plan:
-`docs/superpowers/plans/2026-06-17-noise-gate.md`. Implemented (TDD, subagent-driven) on the
-`noise-gate` branch (stacked on `main`). Silences quiet background noise on the **mic** chain(s)
-below a user-set dB threshold; desktop audio and above-threshold speech pass through untouched.
+`docs/superpowers/plans/2026-06-17-noise-gate.md`. Implemented (TDD) on the `noise-gate` branch
+(stacked on `main`). Suppresses background noise on the **mic** chain(s); desktop audio is untouched.
 
-- ✅ **Engine mechanism — `audiodynamic mode=expander ratio=2`.** GStreamer has **no `cutoff`
-  mode** (the old handoff guessed wrong); the real modes are `compressor`/`expander`. A downward
-  gate is `mode=expander` with `ratio≥2` (empirically: below-threshold → ~−91 dB, above → untouched;
-  `ratio=2` fully gates, higher adds nothing). `threshold` is **linear amplitude 0–1** (NOT dB);
-  `threshold=0` = off. dB↔linear: `linear = 10 ** (db/20)`.
-- ✅ `Settings.mic_noise_gate_enabled: bool = False` + `mic_noise_gate_db: float = -40.0` (forward-
-  compatible — `load` drops unknown keys).
-- ✅ `audio.gate_threshold_linear(db)` + `audio.resolve_gate_threshold(settings)` (pure, unit-tested);
-  `build_audio_fragment(devices, gate_threshold=…)` inserts the gate **mic-only**
-  (`not is_monitor`), after `audioconvert`. Sinks and the `gate_threshold==0` case are byte-for-byte
-  unchanged. `build_controller` passes `resolve_gate_threshold(settings)`.
-- ✅ **Live mic meter** (`ui/level_meter.py`): `peak_to_display_db` + `db_to_fraction` (pure,
-  unit-tested); `MicLevelMonitor(QObject)` runs a standalone
-  `pipewiresrc … ! audioconvert ! level` pipeline polled by a Qt `QTimer` (NO GLib loop; gi imports
-  are lazy so the no-mic path stays headless-importable) and emits `level_changed(peak_db)`;
-  `LevelMeterBar(QWidget)` paints the live level + an amber gate-threshold marker (region below =
-  greyed "would be gated"). The monitor is a 2nd reader on the mic — fine, PipeWire allows it.
-  **Visibility fix (commit `3051d8e`):** the first cut drew a borderless `#222` track that blended
-  into the dark KDE Breeze window background, so the **Mic level** row looked empty ("no bar/widget
-  at all"). Now drawn as a bordered, inset well (mid-grey border, higher-contrast grey/green fills,
-  2px amber marker, min size 160×22 Expanding/Fixed) so the bar's extent is always legible even with
-  no signal. Verified by offscreen `host.grab()` PNG renders (idle = border+marker only; signal =
-  grey-below + green-above).
-- ✅ `SettingsForm` gains an "Enable noise gate (mic)" checkbox + dB spinbox (−60…−10) + the meter;
-  `load`/`collect` round-trip the two fields (preserving untouched fields). `MainWindow.showEvent`/
-  `hideEvent` run the meter **only while the window is visible**.
-- Suite **129 passing** (`.venv/bin/pytest`; was 101). New `tests/test_level_meter.py` + extended
-  audio/settings/settings-form/main-window tests. Per-task spec+quality reviews all passed.
-- ⚠️ **Hardware verification PENDING** — needs a human on the dev box (KDE/Wayland + a mic).
-  Note: the earlier "Mic level shows nothing" report was the visibility bug above, now fixed
-  (`3051d8e`) and confirmed visible via offscreen PNG; the live-tracking + gate-silencing checks
-  below still need real hardware. Steps:
-  launch `python -m tea_clipper.ui`, confirm the **Mic level** bar tracks real input with the marker
-  at the spinbox dB; enable the gate, set the threshold just above idle noise, **Apply**, save a
-  silent-then-speech clip, and check with
-  `ffmpeg -i <clip> -af volumedetect -f null /dev/null` that the silent stretch reads near the gate
-  floor (≈ −91 dB) while speech passes normally. Live GStreamer/PipeWire metering can't be unit-
-  tested (the project's pure-vs-probe split). Not yet merged to `main`.
+**⚠️ Mechanism redesigned (the original `audiodynamic` gate was the wrong tool).** The first cut used
+`audiodynamic mode=expander ratio=2` as a downward gate. Hardware verification exposed two bugs:
+(1) **it didn't gate** real noise — `audiodynamic` keys on *instantaneous sample* amplitude, so
+broadband mic noise *above* threshold passed through unchanged (measured: −35 dB noise → −35.3 dB);
+(2) **terrible quality** — it's a per-sample processor with **no envelope follower / attack / release**,
+so on fluctuating speech the gain chattered open/gated sample-to-sample (zipper artifacts). The old
+"empirically gates to −91 dB" note was only ever true for a *constant below-threshold tone*
+(near-silence), never real noise or speech. **Replaced with `webrtcdsp` noise suppression** (purpose-
+built adaptive denoiser; measured −35 dB noise → −54 dB, no chatter).
+
+- ✅ **Engine mechanism — `webrtcdsp` noise-suppression** (ships in **`gst-plugins-bad`** — now a hard
+  dep in `PKGBUILD`). Inserted **mic-only**, with AEC/AGC/VAD off (`echo-cancel=false voice-detection=
+  false gain-control=false noise-suppression=true noise-suppression-level=<lvl>`). `webrtcdsp` only
+  accepts **S16LE @ 8/16/32/48 kHz**, so the chain pins `audioresample ! audio/x-raw,format=S16LE,
+  rate=48000` immediately upstream of it. Level is the element's own enum: `low|moderate|high|very-high`.
+- ✅ `Settings.mic_noise_suppression_enabled: bool = False` + `mic_noise_suppression_level: str = "high"`
+  (forward-compatible — `load` drops unknown keys, so old `mic_noise_gate_*` configs just fall back).
+- ✅ `audio.resolve_noise_suppression(settings)` → level string or `None` (off/invalid; pure, unit-
+  tested) + `audio.NOISE_SUPPRESSION_LEVELS`. `build_audio_fragment(devices, noise_suppression_level=…)`
+  inserts `webrtcdsp` mic-only (`not is_monitor`); sinks and the `level is None` case are unchanged.
+  `build_controller` passes `resolve_noise_suppression(settings)`.
+- ✅ **Live mic meter** (`ui/level_meter.py`): `peak_to_display_db` + `db_to_fraction` (pure, unit-
+  tested); `MicLevelMonitor(QObject)` runs a standalone `pipewiresrc … ! level` pipeline polled by a Qt
+  `QTimer` (NO GLib loop; gi imports lazy so the no-mic path stays headless-importable) and emits
+  `level_changed(peak_db)`; `LevelMeterBar(QWidget)` paints the live green level fill in a bordered,
+  inset well (visible on dark KDE Breeze — see the earlier `3051d8e` visibility fix). **The amber
+  threshold marker is gone** — suppression is adaptive, so there's no threshold; the meter is purely
+  "is my mic live and how loud".
+- ✅ `SettingsForm` has a "Suppress background noise (mic)" checkbox + a level combo
+  (`low|moderate|high|very-high`, disabled when off) + the meter; `load`/`collect` round-trip the two
+  fields. `MainWindow.showEvent`/`hideEvent` run the meter **only while the window is visible**.
+- Suite **128 passing** (`.venv/bin/pytest`). The exact emitted `webrtcdsp` fragment string was
+  smoke-verified with `gst-launch` (parses + suppresses −35→−53 dB).
+- ✅ **Hardware-tested (2026-06-19) on KDE/Wayland (JBL Quantum610 mic):** the quality regression is
+  **gone** (user confirmed "audio feels fine" — no chatter). webrtcdsp **is** active in the live mixed
+  pipeline: on the isolated mic, idle noise −48 dB → **−75.7 dB** at `very-high` (~28 dB cut), and in a
+  real `very-high` clip the gaps between words read **below −50 dB** (`silencedetect`). The pure
+  fragment + `resolve_noise_suppression` were re-confirmed against the user's actual saved config.
+- ⚠️ **Known limitation the user hit:** webrtcdsp NS cleans the **gaps** but deliberately backs off
+  **during speech**, so residual **room noise still rides on the voice** — the user's complaint
+  ("suppression doesn't seem to be working"). `very-high` is already the max NS level; webrtc NS can't
+  do better on that axis. **Decision deferred to next session (see handoff): evaluate RNNoise.**
+- Still **uncommitted/unmerged** at the close of this session → committed + pushed to
+  `origin/noise-gate` as a pre-KDE-upgrade backup (overwriting the old broken-gate version that was
+  pushed earlier). Not merged to `main`.
 
 ## NEXT SESSION — handoff
 
-**State:** suite **129 passing** (`.venv/bin/pytest`). The **mic noise gate + live input meter**
-feature is complete on the `noise-gate` branch (stacked on `main`), all per-task reviews clean, plus
-a follow-up **meter-visibility fix** (`3051d8e`: the bar was invisible on the dark theme — now
-bordered/high-contrast, confirmed via offscreen render). ⚠️ **Hardware verification is still pending**
-(live mic tracking + gate-silencing a real clip — see its status section above) and it is **not yet
-merged**. The two earlier post-`v0.1.0` features — **UI feedback** and **startup update check** —
-are merged to **local `main`** and hardware-verified. ⚠️ **Local `main` is ahead of `origin/main`
-(`2062a30`) and NOT pushed yet** — push when ready (first push may need to be interactive via
-KWallet; see `[[git-auth-kwallet]]`). The released tag is still `v0.1.0`; bump + re-tag if these go
-out as a release. Runs from a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`).
+**State:** suite **128 passing** (`.venv/bin/pytest`). The **mic noise suppression + live input meter**
+feature lives on the `noise-gate` branch (stacked on `main`), mechanism **redesigned mid-feature**: the
+original `audiodynamic` expander gate was hardware-tested by the user and found broken (didn't gate real
+noise + chattered/degraded mic quality), so it was replaced with `webrtcdsp` adaptive noise suppression
+(see "Status — mic noise suppression" above for the full root-cause + measured before/after). The
+webrtcdsp redesign was **committed + pushed to `origin/noise-gate`** this session (pre-KDE-upgrade
+backup; it overwrote the old broken-gate version that had been pushed earlier). **Not merged to `main`.**
+The two earlier post-`v0.1.0` features — **UI feedback** and **startup update check** — are merged to
+`main` (pushed) and hardware-verified. Released tag still `v0.1.0`. Runs from a checkout
+(`python -m tea_clipper.ui` / `python -m tea_clipper`).
+
+**⏸ OPEN DECISION carried into next session — RNNoise vs ship webrtcdsp as-is.** The user hardware-
+tested webrtcdsp and the verdict was: **quality is fixed** (no chatter) but **"suppression doesn't seem
+to be working"** — clarified as *room noise still audible on the voice during speech*. Root cause is not
+a bug: webrtc NS cleans the gaps but backs off during speech, and it's already at max `very-high`. To
+remove noise *from the voice*, **RNNoise** is the right tool (ML voice denoiser, what NoiseTorch uses).
+Key facts gathered: `noise-suppression-for-voice` (the RNNoise **LADSPA** wrapper GStreamer's `ladspa`
+element loads) **is in OFFICIAL repos** (`extra/` + `cachyos-extra-v3`, v1.21) — *not* AUR-only, so it
+wouldn't break the PKGBUILD "no AUR deps" rule. The core `rnnoise` lib is installed but the LADSPA
+wrapper is **not** (so it couldn't be tested without `sudo pacman -S noise-suppression-for-voice`).
+**Options put to the user (not yet chosen):** (a) install it + switch mic suppression to RNNoise
+[recommended — needs a build iteration + hardware re-test; UX likely changes from a level combo to a
+VAD-threshold/on-off]; (b) ship webrtcdsp as-is and move on; (c) ship webrtcdsp now, evaluate RNNoise
+later. The user paused here to "save it for next session" — **ask which option before implementing.**
+Design idea worth weighing: webrtcdsp default + RNNoise as an optional stronger mode when the plugin is
+present (but YAGNI — probably just switch if the user wants RNNoise).
 
 **NEXT SESSION — planned work:**
-1. ~~**Microphone volume gate (noise gate).**~~ — **done** on the `noise-gate` branch (see "Status —
-   mic noise gate" above); hardware-verify + merge.
+1. **Resolve the RNNoise decision above**, then commit/hardware-verify/merge the noise-suppression
+   feature. If RNNoise: `sudo pacman -S noise-suppression-for-voice`, find the `ladspa` element name
+   (likely `ladspa-librnnoise-ladspa-so-noise-suppressor-mono`/`-stereo`), validate ~20+ dB voice-noise
+   cut on the JBL mic, rewire `_device_fragment` (mic-only), update Settings/SettingsForm UX + PKGBUILD
+   dep, TDD throughout. If shipping webrtcdsp as-is: just merge `noise-gate` → `main`.
 2. **Single-instance lock.** Prevent a second `tea-clipper` from launching — a second launch would
    open a second screencast portal session + rolling buffer and fight over hotkeys. Implement a
    process lock (e.g. a `QLockFile` / flock on `$XDG_RUNTIME_DIR/tea-clipper.lock`, or a D-Bus
