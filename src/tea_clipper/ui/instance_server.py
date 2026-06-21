@@ -26,8 +26,9 @@ def serve(on_activate: Callable[[], None]) -> QLocalServer:
 
     def _handle() -> None:
         conn = server.nextPendingConnection()
-        if conn is not None:
-            conn.disconnectFromServer()
+        if conn is None:
+            return
+        conn.disconnectFromServer()
         on_activate()
 
     server.newConnection.connect(_handle)
