@@ -398,6 +398,40 @@ would fight pacman). GUI only — the headless daemon is untouched.
   probe (temporarily lowering `__version__` to confirm the notes + 3 buttons) remains the way to
   exercise the dialog UI if it changes.
 
+## Status — single-instance lock
+
+Spec: `docs/superpowers/specs/2026-06-21-single-instance-design.md` · Plan:
+`docs/superpowers/plans/2026-06-21-single-instance.md`. Implemented (TDD, subagent-driven) on the
+`single-instance` branch (stacked on `main`). Prevents a second `tea-clipper` from launching across
+**both** entrypoints (a second instance would open a second screencast session + rolling buffer and
+fight over the hotkeys). Two cleanly separated layers:
+
+- ✅ `single_instance.py` — **stdlib-only, no Qt** (the GLib daemon imports it): `lock_path()`
+  (`$XDG_RUNTIME_DIR/tea-clipper.lock`, fallback `tempfile.gettempdir()`) + `InstanceLock`
+  (`fcntl.flock(LOCK_EX|LOCK_NB)`; `acquire()->bool` is **True** when held *or when the lock file is
+  unusable* — degrade gracefully, never block launch — and **False** only on contention;
+  `release()` idempotent). The OS auto-releases the lock on process exit/crash, so there is **no
+  stale-PID cleanup**. Unit-tested (`tests/test_single_instance.py`).
+- ✅ `ui/instance_server.py` — **Qt, GUI-only** activation channel over a `QLocalServer`/`QLocalSocket`
+  named `"tea-clipper"`: `serve(on_activate)` (calls `removeServer()` before `listen()` to clear a
+  stale socket from a crash; returns the server so the caller keeps it alive) + `try_activate()->bool`.
+  Round-trip unit-tested offscreen (`tests/test_instance_server.py`, socket name monkeypatched
+  per-PID so the suite never collides with a live instance).
+- ✅ `MainWindow.bring_to_front()` — `showNormal()`+`show()`+`raise_()`+`activateWindow()` (un-hide
+  from tray + focus). Unit-tested offscreen.
+- ✅ Wiring: `ui/app.py` acquires the lock right after `QApplication` (before `EngineHost`); on
+  contention it `try_activate()`s the running GUI's window and `return 0`; on success it
+  `serve(window.bring_to_front)` (ref kept on `app._tea_instance_server`) and releases in a
+  `finally`. `__main__.py` acquires before `build_controller()`; on contention it prints
+  "tea-clipper is already running." to stderr and `return 1`; success releases in a `finally`. The
+  lock is **shared** across both entrypoints, so GUI+daemon also can't coexist.
+- Exit codes when blocked: **GUI → 0** (it raised the existing window), **daemon → 1**.
+- Suite **109 passing** (`.venv/bin/pytest`). Final whole-branch review: ready to merge (no
+  Critical/Important; two minor findings fixed — callback guard + test-socket isolation).
+- ⏳ **Hardware verification pending** (needs two real launches on the KDE box): (1) launch the GUI
+  twice → the 2nd raises the 1st's window and exits 0; (2) GUI-then-daemon and daemon-then-GUI →
+  the 2nd is blocked and opens no second portal session. **Not merged to `main`.**
+
 ## NEXT SESSION — handoff
 
 **State:** **feature-complete**, suite **101 passing** (`.venv/bin/pytest`). Two post-`v0.1.0`
@@ -416,12 +450,9 @@ is still `v0.1.0`; bump + re-tag if these go out as a release. Runs from a check
    element in `mode=cutoff` (a downward gate that zeroes signal below `threshold`) inserted on the
    mic chain before `amix.`, with the threshold exposed as a `Settings` field (and a UI control).
    Brainstorm first (element choice + whether the gate is mic-only or post-mix; default mic-only).
-2. **Single-instance lock.** Prevent a second `tea-clipper` from launching — a second launch would
-   open a second screencast portal session + rolling buffer and fight over hotkeys. Implement a
-   process lock (e.g. a `QLockFile` / flock on `$XDG_RUNTIME_DIR/tea-clipper.lock`, or a D-Bus
-   single-instance name); on a second launch, **raise/focus the existing window via the tray** and
-   exit. Applies to both entrypoints (`tea_clipper.ui` and the headless `tea_clipper`). Brainstorm
-   the mechanism (QLockFile is simplest and cross-checkout; D-Bus activation is more KDE-native).
+2. ~~**Single-instance lock.**~~ — **DONE** on the `single-instance` branch (flock lock +
+   Qt local-socket window-raise; see "Status — single-instance lock" above). **Remaining: hardware-
+   verify the two-launch behavior on the KDE box, then merge `single-instance` → `main`.**
 
 **Other candidate work (lower priority):** finish the AUR push (below); a `tea-clipper-git` VCS
 package; remaining deferred polish (below).
