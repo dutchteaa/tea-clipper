@@ -41,3 +41,12 @@ def test_button_click_requests_toggle(qapp):
     win = MainWindow(host, Settings())
     win._record_btn.click()
     assert host.toggles == 1
+
+
+def test_bring_to_front_unhides_window(qapp):
+    host = FakeHost()
+    win = MainWindow(host, Settings())
+    win.hide()
+    assert win.isVisible() is False
+    win.bring_to_front()
+    assert win.isVisible() is True
