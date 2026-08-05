@@ -448,18 +448,36 @@ Suite **109 passing**. (KWallet had no stored token this session — re-seeded a
 ## NEXT SESSION — handoff
 
 **State:** **feature-complete**, `v0.2.0` **released and pushed**, suite **109 passing**
-(`.venv/bin/pytest`). `main` == `origin/main` == `f185ea2`. Runs from a checkout
-(`python -m tea_clipper.ui` / `python -m tea_clipper`) or the installed console scripts.
+(`.venv/bin/pytest`). `main` == `origin/main` (local ahead by the docs commits below until pushed).
+Runs from a checkout (`python -m tea_clipper.ui` / `python -m tea_clipper`) or the installed
+console scripts. Installed pacman pkg was upgraded to **0.2.0-1** this session (so the GUI now has
+the startup update check — GUI-only, silent when up-to-date).
 
-**NEXT SESSION — planned work:**
-1. **Microphone volume gate (noise gate).** Add a gate on the mic branch so quiet background noise
-   below a threshold is silenced. The mic enters the pipeline in `audio.build_audio_fragment` (one
-   `pipewiresrc target-object=<mic> … ! amix.` chain per device, mixed via `audiomixer name=amix`).
-   GStreamer ships no stock noise-gate element, so the likely approach is the **`audiodynamic`**
-   element in `mode=cutoff` (a downward gate that zeroes signal below `threshold`) inserted on the
-   mic chain before `amix.`, with the threshold exposed as a `Settings` field (and a UI control).
-   Brainstorm first (element choice + whether the gate is mic-only or post-mix; default mic-only).
-   ~~2. Single-instance lock~~ — **DONE & released in v0.2.0** (merged, hardware-verified above).
+**NEXT SESSION — START HERE: implement the capture-quality + clip-hotkeys spec.**
+A design spec is **written, self-reviewed, and committed** (`c879188`):
+`docs/superpowers/specs/2026-08-05-capture-quality-and-clip-hotkeys-design.md`. Brainstorm is
+**done and approved**; the remaining steps are: (optionally re-read the spec →) **invoke
+`superpowers:writing-plans`** to produce the implementation plan, then implement TDD
+(subagent-driven is fine). Two features in one spec, decomposed into 5 independent tasks:
+- **Multiple clip-length hotkeys** — slot 1 stays the existing `save_clip`/Ctrl+Alt+C
+  (`clip_length_seconds`); `extra_clip_lengths: list[int]` adds positional slots `save_clip_2..N`
+  (no default trigger — user binds in KDE). One pure `clip_hotkeys()` helper feeds both
+  `build_shortcuts_list()` and the `Controller` listener wiring; `compute_max_segments` sizes the
+  buffer from the **longest** slot. UI: comma-separated "Extra clip lengths (s)" field.
+- **Capture resolution/downscale** — `capture_max_height: int = 0` (0=native). `parse_start_results`
+  also returns the stream `size`; pure `compute_scaled_size(w,h,max_h)` preserves aspect, never
+  upscales, snaps to even; `build_video_fragment(..., size=None)` inserts `videoscale ! caps(w,h)`;
+  `PortalManager.open` degrades to native if the portal omits size. UI: "Max resolution" dropdown.
+- Both take effect via the existing Apply → `EngineHost.restart` path.
+
+**Deferred (was next, now second): Microphone volume gate (noise gate).** Add a gate on the mic
+branch so quiet background noise below a threshold is silenced. The mic enters the pipeline in
+`audio.build_audio_fragment` (one `pipewiresrc target-object=<mic> … ! amix.` chain per device,
+mixed via `audiomixer name=amix`). GStreamer ships no stock noise-gate element, so the likely
+approach is the **`audiodynamic`** element in `mode=cutoff` (a downward gate that zeroes signal
+below `threshold`) inserted on the mic chain before `amix.`, with the threshold exposed as a
+`Settings` field (and a UI control). Brainstorm first (element choice + whether the gate is mic-only
+or post-mix; default mic-only).
 
 **Other candidate work (lower priority):** finish the AUR push (below); remaining deferred polish (below).
 
