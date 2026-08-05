@@ -428,21 +428,30 @@ fight over the hotkeys). Two cleanly separated layers:
 - Exit codes when blocked: **GUI → 0** (it raised the existing window), **daemon → 1**.
 - Suite **109 passing** (`.venv/bin/pytest`). Final whole-branch review: ready to merge (no
   Critical/Important; two minor findings fixed — callback guard + test-socket isolation).
-- ⏳ **Hardware verification pending** (needs two real launches on the KDE box): (1) launch the GUI
-  twice → the 2nd raises the 1st's window and exits 0; (2) GUI-then-daemon and daemon-then-GUI →
-  the 2nd is blocked and opens no second portal session. **Not merged to `main`.**
+- ✅ **Hardware-verified** (2026-08-05) on KDE/Wayland — all three two-launch scenarios: GUI+GUI →
+  2nd raises the 1st's window and exits 0 (`try_activate()` returned True); GUI+daemon → daemon
+  blocked, exits 1; daemon+GUI → GUI blocked, exits 0 (activate no-op, daemon has no server). Every
+  blocked instance exited in <0.25s at the lock check — **no second portal session opened**. Merged
+  to `main`.
+
+## Status — v0.2.0 release
+
+**Released `v0.2.0`** (2026-08-05): GitHub Release
+https://github.com/dutchteaa/tea-clipper/releases/tag/v0.2.0, tag `v0.2.0` → commit `e3ced26`,
+`main`/`origin/main` at `f185ea2`. Covers everything since `v0.1.0`: **single-instance lock**,
+**UI feedback** (clip-saved toast + record-state sync), **startup update check**, plus PKGBUILD
+standards pass + README install docs. Version bumped 0.1.0→0.2.0 in `pyproject.toml`,
+`__init__.__version__`, and the in-repo `PKGBUILD` (checksum pinned in a follow-up: `f185ea2`).
+Suite **109 passing**. (KWallet had no stored token this session — re-seeded a fresh PAT via
+`git credential approve`; see updated `[[git-auth-kwallet]]`.)
 
 ## NEXT SESSION — handoff
 
-**State:** **feature-complete**, suite **101 passing** (`.venv/bin/pytest`). Two post-`v0.1.0`
-features — **UI feedback** (toast + record-state sync) and **startup update check** — are merged
-to **local `main`** and **hardware-verified** (see their status sections above). ⚠️ **Local `main`
-is ahead of `origin/main` (`2062a30`) by these merges and is NOT pushed yet** — push when ready
-(first push may need to be interactive via KWallet; see `[[git-auth-kwallet]]`). The released tag
-is still `v0.1.0`; bump + re-tag if these go out as a release. Runs from a checkout
-(`python -m tea_clipper.ui` / `python -m tea_clipper`).
+**State:** **feature-complete**, `v0.2.0` **released and pushed**, suite **109 passing**
+(`.venv/bin/pytest`). `main` == `origin/main` == `f185ea2`. Runs from a checkout
+(`python -m tea_clipper.ui` / `python -m tea_clipper`) or the installed console scripts.
 
-**NEXT SESSION — planned work (two features):**
+**NEXT SESSION — planned work:**
 1. **Microphone volume gate (noise gate).** Add a gate on the mic branch so quiet background noise
    below a threshold is silenced. The mic enters the pipeline in `audio.build_audio_fragment` (one
    `pipewiresrc target-object=<mic> … ! amix.` chain per device, mixed via `audiomixer name=amix`).
@@ -450,20 +459,29 @@ is still `v0.1.0`; bump + re-tag if these go out as a release. Runs from a check
    element in `mode=cutoff` (a downward gate that zeroes signal below `threshold`) inserted on the
    mic chain before `amix.`, with the threshold exposed as a `Settings` field (and a UI control).
    Brainstorm first (element choice + whether the gate is mic-only or post-mix; default mic-only).
-2. ~~**Single-instance lock.**~~ — **DONE** on the `single-instance` branch (flock lock +
-   Qt local-socket window-raise; see "Status — single-instance lock" above). **Remaining: hardware-
-   verify the two-launch behavior on the KDE box, then merge `single-instance` → `main`.**
+   ~~2. Single-instance lock~~ — **DONE & released in v0.2.0** (merged, hardware-verified above).
 
-**Other candidate work (lower priority):** finish the AUR push (below); a `tea-clipper-git` VCS
-package; remaining deferred polish (below).
+**Other candidate work (lower priority):** finish the AUR push (below); remaining deferred polish (below).
 
-**AUR submission — prepared & standards-audited, push pending:** a ready-to-push AUR repo lives at
-`~/Projects/aur-tea-clipper/` (`PKGBUILD` + generated `.SRCINFO` + 0BSD `LICENSE` + `.gitignore`,
-committed on `master`; remote `ssh://aur@aur.archlinux.org/tea-clipper.git`; name is free on AUR).
-An ed25519 deploy key was generated at `~/.ssh/aur` (+ `~/.ssh/config` host entry). **Remaining
-(user-only):** register `~/.ssh/aur.pub` on the AUR account, then `cd ~/Projects/aur-tea-clipper
-&& git push -u origin master`. On a future `pkgver` bump: edit `PKGBUILD`, `updpkgsums`, `makepkg --printsrcinfo >
-.SRCINFO`, commit, push.
+**AUR submission — two packages staged & standards-audited, push blocked only on AUR account:**
+- **`~/Projects/aur-tea-clipper/`** — the **release** package (`tea-clipper`). Bumped to **0.2.0-1**
+  (real tarball checksum verified; `.SRCINFO` regenerated; committed `783dbf8`). Remote
+  `ssh://aur@aur.archlinux.org/tea-clipper.git`.
+- **`~/Projects/aur-tea-clipper-git/`** — a **VCS package** (`tea-clipper-git`) that **auto-tracks
+  the latest release tag**: `prepare()` checks out `git describe --tags --abbrev=0` (not `main`
+  HEAD), `pkgver()` derives the version from that tag → paru/yay auto-rebuild when a new tag lands,
+  no per-release maintenance. `provides/conflicts=tea-clipper`. Committed `62ab1a3`; remote
+  `ssh://aur@aur.archlinux.org/tea-clipper-git.git`. Verified: fresh-clone→checkout→`pkgver`=0.2.0;
+  `.SRCINFO` clean (full wheel build not run — `python-build`/`installer` not installed system-wide).
+- **AUR account status (checked 2026-08-05):** new-account *registration* reopened 2026-07-13 (what's
+  disabled in the late-July wave is *package adoption*, not signups). "Can't register" is almost
+  certainly a **CAPTCHA/browser** issue — disable uBlock/ad-blockers or use a fresh Firefox profile;
+  real (non-disposable) email + verify within 24h are now mandatory.
+- **Remaining (user-only):** get the AUR account working, ensure `~/.ssh/aur.pub` is registered on it,
+  then `git push -u origin master` in each staging dir (either or both). Uses the `~/.ssh/aur` deploy
+  key + `~/.ssh/config` host entry (already set up). On a future release: for `tea-clipper` edit
+  `PKGBUILD` pkgver + `updpkgsums` + `makepkg --printsrcinfo > .SRCINFO`, commit, push; **`tea-clipper-git`
+  needs no edit** — it tracks the new tag automatically.
 
 **Deferred polish (optional, YAGNI):**
 - ~~Window Record button doesn't sync when recording is toggled via hotkey/tray~~ — **done**
