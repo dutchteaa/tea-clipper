@@ -128,6 +128,13 @@ class MainWindow(QMainWindow):
         Path(out).mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(out))
 
+    def bring_to_front(self) -> None:
+        """Un-hide from tray and focus the window. Safe to call when already visible."""
+        self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
     def closeEvent(self, event) -> None:
         # Hide to tray instead of quitting; capture keeps running.
         event.ignore()
