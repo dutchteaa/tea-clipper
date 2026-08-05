@@ -1,6 +1,6 @@
 # Maintainer: dutchteaa <aiden dot vonk07 at gmail dot com>
 pkgname=tea-clipper
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Medal-style instant-replay game clipper for Linux/Wayland (KDE)"
 arch=('any')
@@ -26,7 +26,7 @@ optdepends=(
 )
 makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('5c913f0ad943e92301862ea9ca988ce4c8cd5ff0f7ed01c26e8d79473d131435')
+sha256sums=('SKIP')  # pinned to the real tarball hash in a follow-up commit once the v0.2.0 tag exists
 
 build() {
   cd "$pkgname-$pkgver"
