@@ -26,7 +26,7 @@ optdepends=(
 )
 makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')  # pinned to the real tarball hash in a follow-up commit once the v0.2.0 tag exists
+sha256sums=('94d3a16da4f640da4eae3d485680464c42989f7b80237bb9f073749455f22750')
 
 build() {
   cd "$pkgname-$pkgver"
